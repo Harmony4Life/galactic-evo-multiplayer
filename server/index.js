@@ -133,6 +133,6 @@ const gameServer = new Server({
 gameServer.define('galactic_evo', GalacticEvoRoom).filterBy(['roomCode']);
 
 const port = Number(process.env.PORT || 2567);
-const host = process.env.HOST || '127.0.0.1';
+const host = process.env.HOST || '0.0.0.0';
 gameServer.listen(port, host);
 console.log(`Galactic Evo multiplayer server listening on http://${host}:${port}`);
