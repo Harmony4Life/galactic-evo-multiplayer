@@ -1,0 +1,27 @@
+{
+  "name": "galactic-evo-3d",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:lan": "vite --host 0.0.0.0",
+    "multiplayer": "node server/index.js",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@colyseus/core": "^0.17.43",
+    "@colyseus/schema": "^4.0.25",
+    "@colyseus/sdk": "^0.17.42",
+    "@colyseus/ws-transport": "^0.17.13",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.184.1",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.0"
+  }
+}

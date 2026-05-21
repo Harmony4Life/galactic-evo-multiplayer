@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Galactic Evo 3D</title>
+  </head>
+  <body>
+    <canvas id="gameCanvas" tabindex="0" aria-label="Galactic Evo 3D playfield"></canvas>
+
+    <div id="hudRoot">
+      <div id="topHud" class="hud-strip"></div>
+      <div id="targetArrow" class="target-arrow hidden"></div>
+      <div id="reticle" aria-hidden="true">
+        <span></span>
+      </div>
+      <div id="promptChip" class="prompt-chip"></div>
+      <div id="messageChip" class="message-chip hidden"></div>
+      <div id="multiplayerPanel" class="multiplayer-panel">
+        <div>
+          <strong>2P Co-op</strong>
+          <p id="multiplayerStatus">Solo flight</p>
+        </div>
+        <label>
+          Name
+          <input id="multiplayerName" type="text" maxlength="18" autocomplete="nickname" />
+        </label>
+        <label>
+          Room
+          <input id="multiplayerRoom" type="text" maxlength="8" placeholder="AUTO" />
+        </label>
+        <label>
+          Server
+          <input id="multiplayerServer" type="text" spellcheck="false" />
+        </label>
+        <div class="multiplayer-actions">
+          <button id="multiplayerJoin" type="button">Host / Join</button>
+          <button id="multiplayerCopy" type="button">Invite</button>
+          <button id="multiplayerLeave" type="button" disabled>Leave</button>
+        </div>
+      </div>
+      <div id="scanPanel" class="scan-panel hidden"></div>
+      <div id="menuPanel" class="menu-panel hidden"></div>
+      <canvas id="miniMap" class="mini-map" width="260" height="260"></canvas>
+      <div id="fullMapWrap" class="full-map-wrap hidden">
+        <canvas id="fullMap" width="1200" height="760"></canvas>
+      </div>
+      <div id="cinematicOverlay" class="cinematic-overlay hidden">
+        <div class="letterbox top"></div>
+        <div class="letterbox bottom"></div>
+        <div class="cinematic-title"></div>
+        <div class="cinematic-progress"><span></span></div>
+        <div class="cinematic-copy">
+          <strong></strong>
+          <p></p>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
