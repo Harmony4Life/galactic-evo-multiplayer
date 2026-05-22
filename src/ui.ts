@@ -117,7 +117,7 @@ export class Hud {
     const locked = document.pointerLockElement !== null;
     const lines = locked
       ? 'WASD move | QE vertical | Shift/Alt/Ctrl boost | B boost lock | mouse/arrow look | Space scan | F trigger | H warp | R accept RTW'
-      : 'Click flight view to engage mouse look | T tracker | Y events | U special planets | M map';
+      : 'Drag flight view to angle ship camera | click to engage mouse look | T tracker | Y events | U special planets | M map';
     this.promptChip.textContent = lines;
   }
 

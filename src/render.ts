@@ -1159,7 +1159,7 @@ export class UniverseRenderer {
       return;
     }
 
-    const inWarpTunnel = state.warp.active && (state.warp.phase === 'jump' || state.warp.phase === 'exit');
+    const inWarpTunnel = state.warp.active && state.warp.phase === 'jump';
     if (inWarpTunnel) {
       this.universeRoot.visible = false;
       this.remoteRoot.visible = false;
@@ -1167,6 +1167,7 @@ export class UniverseRenderer {
       this.constellations.visible = false;
       this.cinematic.root.visible = false;
       this.warp.root.visible = true;
+      this.warp.root.quaternion.identity();
       this.camera.position.set(0, 0, 0);
       this.camera.lookAt(0, 0, 1);
       this.warp.update(state, dt);
@@ -1176,7 +1177,7 @@ export class UniverseRenderer {
     }
 
     this.cinematic.root.visible = false;
-    this.warp.root.visible = false;
+    this.warp.root.visible = state.warp.active && state.warp.phase === 'exit';
     this.universeRoot.visible = true;
     this.remoteRoot.visible = true;
     this.starLayers.forEach((layer) => (layer.visible = true));
@@ -1185,6 +1186,9 @@ export class UniverseRenderer {
     const f = forwardVector(state.player);
     this.camera.position.set(0, 0, 0);
     this.camera.lookAt(f.x, f.y, f.z);
+    if (this.warp.root.visible) {
+      this.warp.root.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(f.x, f.y, f.z).normalize());
+    }
     this.updateCameraShip(state, elapsed);
     this.backdrop.rotation.y = state.player.yaw * 0.08 + elapsed * 0.003;
     this.backdrop.rotation.x = -state.player.pitch * 0.05;
@@ -1243,6 +1247,9 @@ export class UniverseRenderer {
 
     this.syncRemotePlayers(state, elapsed, dt);
     this.updateWarpEchoes(state, dt);
+    if (state.warp.active && state.warp.phase === 'exit') {
+      this.warp.update(state, dt);
+    }
 
     this.composer.render();
   }
@@ -1279,15 +1286,18 @@ export class UniverseRenderer {
     const floating = !state.warp.active;
     const alignSpin = phase === 'align' ? (1 - align) * Math.PI * 4.4 : 0;
     const alignBank = phase === 'align' ? Math.sin(align * Math.PI) * 0.76 : 0;
+    const viewPitch = state.player.cameraPitchOffset;
+    const viewYaw = state.player.cameraYawOffset;
+    const topView = THREE.MathUtils.clamp(viewPitch, -0.18, 1.22);
 
     this.localShip.position.set(
-      Math.sin(elapsed * 1.35) * (floating ? 0.035 : 0.012),
-      -0.64 + Math.sin(elapsed * 1.9) * (floating ? 0.034 : 0.012) + exit * 0.12,
-      -4.72 - charge * 0.46 - jump * 1.12 + exit * 0.72
+      Math.sin(elapsed * 1.35) * (floating ? 0.028 : 0.01),
+      -1.36 - topView * 0.32 + Math.sin(elapsed * 1.9) * (floating ? 0.026 : 0.01) + exit * 0.18,
+      -5.55 - topView * 0.72 - charge * 0.46 - jump * 1.12 + exit * 0.94
     );
     this.localShip.rotation.set(
-      -0.58 - charge * 0.08 + exit * 0.06 + alignBank * 0.08,
-      Math.sin(elapsed * 1.2) * 0.025 * (floating ? 1 : 0.25) + alignBank * 0.26,
+      -1.12 - topView * 0.38 - charge * 0.08 + exit * 0.06 + alignBank * 0.08,
+      viewYaw + Math.sin(elapsed * 1.2) * 0.025 * (floating ? 1 : 0.25) + alignBank * 0.26,
       Math.sin(elapsed * 2.1) * 0.035 * (floating ? 1 : 0.18) + alignSpin
     );
 
@@ -1398,7 +1408,7 @@ export class UniverseRenderer {
     aura.position.z = 0.9;
     group.userData.aura = aura;
     group.add(aura, engine, hull, body, wings, canopy);
-    group.scale.setScalar(0.86);
+    group.scale.setScalar(0.72);
     return group;
   }
 
@@ -2131,10 +2141,14 @@ export class UniverseRenderer {
     if (kind === 'Kilonova') {
       const cocoon = new THREE.Group();
       cocoon.rotation.x = Math.PI / 2;
-      cocoon.add(makeVolumetricGalaxyDisc(size * 2.2, mixHex(COLORS.purple, COLORS.gold, 0.36), seed + 12, 9, 4600, 0.24));
-      cocoon.add(makeParticleCloud(2400, size * 4.6, COLORS.gold, seed + 13, 0.36, 0.07));
-      cocoon.add(makeDiamondShardField(110, size * 3.2, COLORS.gold, seed + 14, size * 0.025));
-      group.add(this.spriteGlow(COLORS.purple, size * 8.8, 0.24), this.spriteGlow(COLORS.gold, size * 8.2, 0.18), cocoon);
+      const disc = makeVolumetricGalaxyDisc(size * 2.65, mixHex(COLORS.purple, COLORS.gold, 0.36), seed + 12, 12, 7200, 0.2);
+      disc.scale.set(1.65, 0.72, 0.46);
+      cocoon.add(disc);
+      cocoon.add(makeParticleCloud(3400, size * 5.4, COLORS.gold, seed + 13, 0.4, 0.07));
+      cocoon.add(makeParticleCloud(2600, size * 5.8, COLORS.purple, seed + 113, 0.34, 0.065));
+      cocoon.add(makeDiamondShardField(190, size * 3.8, COLORS.gold, seed + 14, size * 0.028));
+      group.add(this.spriteGlow(COLORS.purple, size * 11.2, 0.26), this.spriteGlow(COLORS.gold, size * 9.2, 0.2), this.spriteGlow(COLORS.white, size * 4.5, 0.08), cocoon);
+      this.addShockRings(group, 9, size * 0.9, size * 0.4, COLORS.gold, 0.24, 0.52);
       return group;
     }
 
@@ -2234,8 +2248,10 @@ export class UniverseRenderer {
     }
 
     if (kind === 'Wormhole') {
-      group.add(this.makeWormhole(size * 1.28, tint), makeSpiralArms(6, 110, size * 4.3, tint, seed, 0.66), makeRadialRays(76, size * 0.6, size * 4.8, COLORS.cyan, seed + 3, 0.54, 0.42));
-      group.add(makeParticleCloud(760, size * 3.5, tint, seed + 4, 0.38, 0.14));
+      group.add(this.makeWormhole(size * 1.55, tint));
+      group.add(makeParticleCloud(1400, size * 4.2, tint, seed + 4, 0.44, 0.12));
+      group.add(makeParticleCloud(820, size * 5.3, COLORS.cyan, seed + 41, 0.18, 0.06));
+      this.addShockRings(group, 12, size * 0.9, size * 0.42, mixHex(tint, COLORS.cyan, 0.42), 0.34, 0.54);
       return group;
     }
 
@@ -2449,14 +2465,47 @@ export class UniverseRenderer {
 
   private makeWormhole(size: number, tint: number) {
     const group = new THREE.Group();
-    group.add(this.spriteGlow(tint, size * 6, 0.24));
-    for (let i = 0; i < 14; i += 1) {
-      const ring = this.torus(size * (0.75 + i * 0.18), size * 0.012, i % 2 ? COLORS.cyan : tint, 0.62 - i * 0.024);
-      ring.rotation.x = Math.PI / 2 + i * 0.04;
-      ring.rotation.z = i * 0.25;
-      ring.position.z = -i * 0.18;
+    group.add(this.spriteGlow(tint, size * 8.2, 0.26), this.spriteGlow(COLORS.cyan, size * 5.8, 0.16));
+    const throat = new THREE.Mesh(
+      new THREE.SphereGeometry(size * 0.36, 48, 24),
+      new THREE.MeshBasicMaterial({ color: COLORS.black, transparent: true, opacity: 0.96 })
+    );
+    throat.scale.set(1, 0.36, 1);
+    group.add(throat);
+    for (let i = 0; i < 26; i += 1) {
+      const ring = this.torus(size * (0.62 + i * 0.105), size * (0.012 + (i % 3) * 0.003), i % 2 ? COLORS.cyan : tint, 0.7 - i * 0.019);
+      ring.rotation.x = Math.PI / 2 + Math.sin(i * 0.7) * 0.12;
+      ring.rotation.y = Math.cos(i * 0.45) * 0.18;
+      ring.rotation.z = i * 0.33;
+      ring.position.z = -i * 0.12;
+      ring.userData.spinZ = (i % 2 ? -1 : 1) * (0.22 + i * 0.012);
       group.add(ring);
     }
+    for (let ribbon = 0; ribbon < 6; ribbon += 1) {
+      const points: number[] = [];
+      const phase = (ribbon / 6) * Math.PI * 2;
+      for (let i = 0; i < 120; i += 1) {
+        const u = i / 119;
+        const r = size * (0.48 + u * 2.8);
+        const twist = phase + u * Math.PI * (3.2 + ribbon * 0.25);
+        points.push(Math.cos(twist) * r, Math.sin(twist) * r * 0.36, -u * size * 1.9);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+      const line = new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: ribbon % 2 ? COLORS.purple : COLORS.cyan,
+          transparent: true,
+          opacity: 0.42,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        })
+      );
+      line.userData.spinZ = ribbon % 2 ? -0.34 : 0.38;
+      group.add(line);
+    }
+    group.add(makeParticleCloud(900, size * 3.2, mixHex(tint, COLORS.cyan, 0.28), Math.floor(size * 1000) + 72, 0.36, 0.1));
     return group;
   }
 
@@ -3175,37 +3224,125 @@ class CinematicDirector {
 
   private buildKilonovaCinematic(event: WorldEvent, tint: number, seed: number) {
     const preflash = new THREE.Group();
-    const primary = this.luminousCore(3.4, COLORS.white, 0.9);
-    const secondary = this.luminousCore(2.8, COLORS.gold, 0.84);
-    primary.position.set(-5.2, 0.6, 0);
-    secondary.position.set(5.2, -0.4, 0);
-    preflash.add(this.cinematicGlow(COLORS.purple, 84, 0.18), this.cinematicGlow(COLORS.gold, 64, 0.14), primary, secondary);
-    preflash.add(makeParticleCloud(2200, 38, mixHex(COLORS.purple, COLORS.gold, 0.28), seed + 601, 0.22, 0.07));
-    preflash.add(makeDiamondShardField(95, 24, COLORS.gold, seed + 602, 0.11));
-    this.addStage(preflash, 0, 0.42, 0.92, 1.08);
+    const primary = this.dancer(this.luminousCore(3.2, COLORS.white, 0.92), 0, 0.52, 14, 2.5, 5.4, -1, 0.28);
+    const secondary = this.dancer(this.luminousCore(2.9, COLORS.gold, 0.88), 0, 0.52, 14, 2.5, 5.4, 1, 0.28);
+    preflash.add(this.cinematicGlow(COLORS.purple, 92, 0.2), this.cinematicGlow(COLORS.gold, 78, 0.16), primary, secondary);
+    preflash.add(makeParticleCloud(3600, 42, mixHex(COLORS.purple, COLORS.gold, 0.28), seed + 601, 0.24, 0.065));
+    preflash.add(makeParticleCloud(1600, 26, COLORS.softWhite, seed + 609, 0.14, 0.045));
+    preflash.add(makeDiamondShardField(130, 28, COLORS.gold, seed + 602, 0.12));
+    preflash.add(this.ringSet(COLORS.gold, 9, 5.6, 1.7, 0.24, 0.42));
+    this.addStage(preflash, 0, 0.42, 0.94, 1.04);
 
     const flash = new THREE.Group();
-    flash.add(this.cinematicGlow(COLORS.white, 114, 0.38), this.cinematicGlow(COLORS.purple, 156, 0.32), this.cinematicGlow(COLORS.gold, 130, 0.28));
-    flash.add(this.luminousCore(6.4, COLORS.white, 0.96));
-    const polarA = this.cinematicBeam(118, 0.44, COLORS.purple, 0.28);
+    flash.add(this.cinematicGlow(COLORS.white, 140, 0.44), this.cinematicGlow(COLORS.purple, 178, 0.34), this.cinematicGlow(COLORS.gold, 154, 0.32));
+    flash.add(this.luminousCore(7.2, COLORS.white, 0.98));
+    const polarA = this.cinematicBeam(148, 0.56, COLORS.purple, 0.32);
     polarA.rotation.z = Math.PI / 2;
-    const polarB = this.cinematicBeam(108, 0.25, COLORS.gold, 0.24);
+    const polarB = this.cinematicBeam(142, 0.32, COLORS.gold, 0.3);
     polarB.rotation.z = Math.PI / 2;
     polarB.rotation.y = 0.18;
-    flash.add(polarA, polarB);
-    flash.add(makeRadialRays(280, 5, 78, COLORS.gold, seed + 603, 0.46, 0.62));
-    flash.add(makeParticleCloud(5200, 58, mixHex(COLORS.purple, COLORS.gold, 0.38), seed + 604, 0.5, 0.12));
-    this.addStage(flash, 0.25, 0.82, 0.18, 1.52);
+    const polarHot = this.cinematicBeam(156, 0.12, COLORS.white, 0.5);
+    polarHot.rotation.z = Math.PI / 2;
+    flash.add(polarA, polarB, polarHot);
+    flash.add(makeRadialRays(430, 4, 96, COLORS.gold, seed + 603, 0.42, 0.72));
+    flash.add(makeRadialRays(320, 4, 88, COLORS.purple, seed + 613, 0.38, 0.6));
+    flash.add(makeParticleCloud(7200, 72, mixHex(COLORS.purple, COLORS.gold, 0.38), seed + 604, 0.54, 0.12));
+    flash.add(makeDiamondShardField(260, 62, COLORS.gold, seed + 614, 0.17));
+    flash.add(this.ringSet(COLORS.white, 15, 8, 2.45, 0.32, 0.48));
+    this.addStage(flash, 0.22, 0.78, 0.12, 1.7);
 
     const cocoon = new THREE.Group();
-    cocoon.add(this.cinematicGlow(COLORS.purple, 142, 0.26), this.cinematicGlow(COLORS.gold, 126, 0.2));
-    const ejecta = makeVolumetricGalaxyDisc(50, mixHex(COLORS.purple, COLORS.gold, 0.32), seed + 605, 10, 8600, 0.22);
-    ejecta.scale.set(1.55, 0.72, 0.56);
+    cocoon.add(this.cinematicGlow(COLORS.purple, 158, 0.28), this.cinematicGlow(COLORS.gold, 148, 0.24), this.cinematicGlow(COLORS.white, 78, 0.12));
+    const ejecta = makeVolumetricGalaxyDisc(62, mixHex(COLORS.purple, COLORS.gold, 0.34), seed + 605, 12, 12000, 0.2);
+    ejecta.scale.set(1.72, 0.78, 0.58);
     cocoon.add(ejecta);
-    cocoon.add(makeParticleCloud(6400, 68, COLORS.purple, seed + 606, 0.52, 0.1));
-    cocoon.add(makeParticleCloud(4200, 58, COLORS.gold, seed + 607, 0.42, 0.08));
-    cocoon.add(makeDiamondShardField(220, 54, COLORS.gold, seed + 608, 0.12));
-    this.addStage(cocoon, 0.58, 1.24, 0.62, 1.12);
+    cocoon.add(makeParticleCloud(7600, 78, COLORS.purple, seed + 606, 0.54, 0.1));
+    cocoon.add(makeParticleCloud(5600, 68, COLORS.gold, seed + 607, 0.44, 0.08));
+    cocoon.add(makeParticleCloud(2200, 96, COLORS.softWhite, seed + 617, 0.16, 0.045));
+    cocoon.add(makeDiamondShardField(340, 70, COLORS.gold, seed + 608, 0.14));
+    cocoon.add(this.ringSet(COLORS.gold, 18, 9.5, 2.2, 0.24, 0.44));
+    this.addStage(cocoon, 0.55, 1.24, 0.56, 1.18);
+
+    const remnant = new THREE.Group();
+    remnant.add(this.cinematicGlow(COLORS.purple, 134, 0.22), this.cinematicGlow(COLORS.gold, 116, 0.2));
+    const shell = makeVolumetricGalaxyDisc(48, mixHex(COLORS.gold, COLORS.white, 0.22), seed + 621, 9, 8200, 0.18);
+    shell.scale.set(1.9, 0.52, 0.42);
+    remnant.add(shell, makeDiamondShardField(220, 54, COLORS.gold, seed + 622, 0.11));
+    remnant.add(makeParticleCloud(3600, 62, mixHex(COLORS.purple, COLORS.white, 0.24), seed + 623, 0.42, 0.08));
+    this.addStage(remnant, 0.78, 1.32, 0.62, 0.98);
+  }
+
+  private buildWormholeCinematic(event: WorldEvent, tint: number, seed: number) {
+    const aperture = new THREE.Group();
+    aperture.add(this.cinematicGlow(tint, 122, 0.24), this.cinematicGlow(COLORS.cyan, 96, 0.18), this.cinematicGlow(COLORS.purple, 136, 0.13));
+    const throat = new THREE.Mesh(
+      new THREE.SphereGeometry(8.8, 72, 36),
+      new THREE.MeshBasicMaterial({ color: COLORS.black, transparent: true, opacity: 0.98 })
+    );
+    throat.scale.set(1, 0.38, 1);
+    aperture.add(throat);
+    for (let i = 0; i < 34; i += 1) {
+      const ring = this.cinematicRing(5.4 + i * 0.78, 0.045 + i * 0.0015, i % 2 ? COLORS.cyan : tint, 0.78 - i * 0.018);
+      ring.rotation.x = Math.PI / 2 + Math.sin(i * 0.42) * 0.18;
+      ring.rotation.y = Math.cos(i * 0.3) * 0.16;
+      ring.rotation.z = i * 0.28;
+      ring.position.z = -i * 0.18;
+      this.rings.push(ring);
+      aperture.add(ring);
+    }
+    aperture.add(makeParticleCloud(3200, 52, mixHex(tint, COLORS.cyan, 0.36), seed + 701, 0.38, 0.09));
+    aperture.add(makeParticleCloud(1400, 72, COLORS.softWhite, seed + 702, 0.18, 0.045));
+    this.addStage(aperture, 0, 0.58, 0.66, 1.2);
+
+    const lens = new THREE.Group();
+    lens.add(this.cinematicGlow(COLORS.cyan, 132, 0.16), this.ringSet(COLORS.cyan, 18, 8, 2.2, 0.28, 0.44), this.ringSet(COLORS.purple, 14, 10, 2.5, 0.22, 0.58));
+    for (let ribbon = 0; ribbon < 12; ribbon += 1) {
+      const points: THREE.Vector3[] = [];
+      const phase = (ribbon / 12) * Math.PI * 2;
+      for (let k = 0; k < 150; k += 1) {
+        const u = k / 149;
+        const radius = 7 + u * 56;
+        const twist = phase + u * Math.PI * (3.2 + ribbon * 0.12);
+        points.push(new THREE.Vector3(Math.cos(twist) * radius, Math.sin(twist) * radius * 0.46, -u * 48 + Math.sin(u * Math.PI * 3 + phase) * 4));
+      }
+      lens.add(
+        new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({
+            color: ribbon % 3 === 0 ? COLORS.softWhite : ribbon % 2 ? COLORS.purple : COLORS.cyan,
+            transparent: true,
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          })
+        )
+      );
+    }
+    lens.add(makeRadialRays(260, 8, 86, COLORS.cyan, seed + 703, 0.5, 0.5));
+    this.addStage(lens, 0.18, 0.9, 0.32, 1.46);
+
+    const transit = new THREE.Group();
+    transit.add(this.cinematicGlow(COLORS.white, 128, 0.28), this.cinematicGlow(COLORS.cyan, 160, 0.26));
+    const tunnel = this.cinematicBeam(138, 2.2, COLORS.cyan, 0.18);
+    tunnel.rotation.x = Math.PI / 2;
+    const hotThread = this.cinematicBeam(152, 0.18, COLORS.white, 0.36);
+    hotThread.rotation.x = Math.PI / 2;
+    transit.add(tunnel, hotThread);
+    for (let i = 0; i < 22; i += 1) {
+      const ring = this.cinematicRing(7 + i * 1.35, 0.035, i % 2 ? COLORS.purple : COLORS.cyan, 0.48 - i * 0.014);
+      ring.position.z = -36 + i * 3.4;
+      ring.rotation.x = Math.PI / 2 + i * 0.055;
+      ring.rotation.z = i * 0.31;
+      transit.add(ring);
+    }
+    transit.add(makeParticleCloud(5400, 80, mixHex(COLORS.cyan, COLORS.white, 0.36), seed + 704, 0.42, 0.08));
+    this.addStage(transit, 0.42, 1.08, 0.18, 1.62);
+
+    const exit = new THREE.Group();
+    exit.add(this.cinematicGlow(COLORS.white, 180, 0.4), this.cinematicGlow(tint, 120, 0.22));
+    exit.add(makeRadialRays(420, 5, 106, COLORS.white, seed + 705, 0.72, 0.72));
+    exit.add(makeParticleCloud(2800, 70, COLORS.softWhite, seed + 706, 0.45, 0.1));
+    this.addStage(exit, 0.78, 1.3, 0.08, 1.18);
   }
 
   private buildMagnetarCinematic(event: WorldEvent, tint: number, seed: number) {
@@ -3276,18 +3413,7 @@ class CinematicDirector {
     }
 
     if (kind === 'Wormhole') {
-      this.root.add(this.cinematicGlow(tint, 74, 0.22), makeSpiralArms(7, 160, 30, tint, seed + 7, 0.7));
-      for (let i = 0; i < 26; i += 1) {
-        const ring = this.cinematicRing(4 + i * 0.72, 0.055, i % 2 ? COLORS.purple : COLORS.cyan, 0.74 - i * 0.018);
-        ring.position.z = i * 1.55;
-        ring.rotation.x = Math.PI / 2 + i * 0.04;
-        ring.rotation.z = i * 0.21;
-        this.rings.push(ring);
-        this.root.add(ring);
-      }
-      this.addCinematicRays(180, 6, 42, COLORS.cyan, seed + 8, 0.54, 0.46);
-      this.particles = makeParticleCloud(2400, 42, COLORS.purple, seed + 9, 0.45, 0.18);
-      this.root.add(this.particles);
+      this.buildWormholeCinematic(event, tint, seed);
       return;
     }
 
@@ -3560,6 +3686,7 @@ class WarpTunnel {
   private streaks: THREE.LineSegments;
   private geometry: THREE.BufferGeometry;
   private rings: THREE.Mesh[] = [];
+  private ribbons: THREE.Line[] = [];
   private chargeCore: THREE.Sprite;
   private companion: THREE.Group;
 
@@ -3598,6 +3725,31 @@ class WarpTunnel {
       this.rings.push(ring);
       this.root.add(ring);
     }
+    for (let ribbonIndex = 0; ribbonIndex < 7; ribbonIndex += 1) {
+      const points: number[] = [];
+      const phase = (ribbonIndex / 7) * Math.PI * 2;
+      for (let k = 0; k < 170; k += 1) {
+        const u = k / 169;
+        const z = 8 + u * 228;
+        const radius = 3.2 + Math.sin(u * Math.PI) * (3.5 + ribbonIndex * 0.22);
+        const twist = phase + u * Math.PI * (5.5 + ribbonIndex * 0.38);
+        points.push(Math.cos(twist) * radius, Math.sin(twist) * radius * 0.62, z);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+      const line = new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: ribbonIndex % 2 ? COLORS.purple : COLORS.cyan,
+          transparent: true,
+          opacity: 0.28,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        })
+      );
+      this.ribbons.push(line);
+      this.root.add(line);
+    }
     this.companion = new THREE.Group();
     const friendHull = new THREE.Mesh(
       new THREE.ConeGeometry(0.28, 1.25, 5),
@@ -3632,6 +3784,10 @@ class WarpTunnel {
     const jumpProgress = jumping ? smoothstep(state.warp.timer / WARP_DURATION) : exiting ? 1 : 0;
     const exitProgress = exiting ? smoothstep(state.warp.timer / WARP_EXIT_DURATION) : 0;
     const t = state.warp.timer;
+    const tunnelFade = exiting ? 1 - exitProgress : 1;
+    const destinationColor = state.warp.destinationColor || COLORS.cyan;
+    (this.chargeCore.material as THREE.SpriteMaterial).color.setHex(mixHex(destinationColor, COLORS.cyan, 0.45));
+    (this.streaks.material as THREE.LineBasicMaterial).opacity = (jumping ? 0.92 : 0.55) * tunnelFade;
     for (let i = 0; i < 760; i += 1) {
       const a = i * 12.9898;
       const angle = (Math.sin(a) * 43758.5453) % (Math.PI * 2);
@@ -3663,6 +3819,13 @@ class WarpTunnel {
       ring.position.z = charging || aligning ? 12 + i * (2.5 + chargeProgress * 1.9) : exiting ? 18 + i * 5.2 - exitProgress * 12 : 8 + i * 7;
       ring.scale.setScalar((charging || aligning ? 0.36 + chargeProgress * 1.05 : exiting ? 1.35 - exitProgress * 0.68 : 1.08 + jumpProgress * 0.34) + Math.sin(t * 4 + i) * 0.08);
       (ring.material as THREE.MeshBasicMaterial).opacity = exiting ? Math.max(0.04, 0.24 * (1 - exitProgress)) : charging || aligning ? 0.16 + chargeProgress * 0.18 : 0.22;
+    });
+    this.ribbons.forEach((ribbon, i) => {
+      ribbon.rotation.z += dt * (0.42 + i * 0.055 + jumpProgress * 0.75);
+      ribbon.position.z = exiting ? -exitProgress * 26 : Math.sin(t * 1.6 + i) * 0.8;
+      const mat = ribbon.material as THREE.LineBasicMaterial;
+      mat.color.setHex(i % 3 === 0 ? mixHex(destinationColor, COLORS.white, 0.24) : i % 2 ? COLORS.purple : COLORS.cyan);
+      mat.opacity = (0.12 + jumpProgress * 0.26) * tunnelFade;
     });
     this.companion.visible = state.warp.groupWarp;
     if (state.warp.groupWarp) {

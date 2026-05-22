@@ -48,6 +48,9 @@ function isTextEntryTarget(target: EventTarget | null) {
 export class InputController {
   private keys = new Set<string>();
   private mouseSensitivity = 0.0022;
+  private cameraDragActive = false;
+  private cameraDragMoved = false;
+  private dragPointerId = -1;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -79,8 +82,46 @@ export class InputController {
       this.keys.clear();
     });
 
-    this.canvas.addEventListener('click', () => {
+    this.canvas.addEventListener('pointerdown', (event) => {
+      if (document.pointerLockElement === this.canvas) return;
+      if (event.button !== 0) return;
+      if (this.hud.isPointerBlocked() || this.state.fullMapOpen || this.state.trackerOpen || this.state.eventMenuOpen || this.state.specialMenuOpen) return;
+      this.cameraDragActive = true;
+      this.cameraDragMoved = false;
+      this.dragPointerId = event.pointerId;
+      this.canvas.setPointerCapture(event.pointerId);
+    });
+
+    this.canvas.addEventListener('pointermove', (event) => {
+      if (!this.cameraDragActive || document.pointerLockElement === this.canvas || event.pointerId !== this.dragPointerId) return;
+      const dx = event.movementX;
+      const dy = event.movementY;
+      if (Math.abs(dx) + Math.abs(dy) > 1) this.cameraDragMoved = true;
+      this.state.player.cameraYawOffset += dx * 0.006;
+      this.state.player.cameraPitchOffset = clamp(this.state.player.cameraPitchOffset - dy * 0.0045, -0.18, 1.22);
+      event.preventDefault();
+    });
+
+    const endCameraDrag = (event: PointerEvent) => {
+      if (event.pointerId !== this.dragPointerId) return;
+      this.cameraDragActive = false;
+      this.dragPointerId = -1;
+      try {
+        this.canvas.releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can already be released by browser gesture cancellation.
+      }
+    };
+    this.canvas.addEventListener('pointerup', endCameraDrag);
+    this.canvas.addEventListener('pointercancel', endCameraDrag);
+
+    this.canvas.addEventListener('click', (event) => {
       this.canvas.focus();
+      if (this.cameraDragMoved) {
+        this.cameraDragMoved = false;
+        event.preventDefault();
+        return;
+      }
       if (!this.state.fullMapOpen && !this.state.trackerOpen && !this.state.eventMenuOpen && !this.state.specialMenuOpen) {
         void this.canvas.requestPointerLock().catch(() => undefined);
       }

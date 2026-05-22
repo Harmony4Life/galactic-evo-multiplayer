@@ -108,6 +108,8 @@ export interface PlayerState {
   baseSpeed: number;
   boostMultiplier: number;
   boostLocked: boolean;
+  cameraYawOffset: number;
+  cameraPitchOffset: number;
 }
 
 export interface RemotePlayerState {
@@ -454,7 +456,9 @@ export class GameState {
     pitch: 0,
     baseSpeed: 940,
     boostMultiplier: 4.2,
-    boostLocked: false
+    boostLocked: false,
+    cameraYawOffset: 0,
+    cameraPitchOffset: 1.02
   };
 
   warp: WarpState = {
