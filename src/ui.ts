@@ -1,4 +1,4 @@
-import { COLORS, distance, GameState, isEvent, smoothstep, targetPosition, Trackable } from './simulation';
+import { COLORS, distance, GameState, isEvent, RemotePlayerState, smoothstep, targetPosition, Trackable } from './simulation';
 
 function hex(color: number) {
   return `#${color.toString(16).padStart(6, '0')}`;
@@ -94,8 +94,15 @@ export class Hud {
       : multiplayer.connected
         ? 'awaiting friend'
         : 'solo';
+    const squadText = this.state.squadMemberId
+      ? ` | squad ${escapeHtml(this.state.remotePlayers.get(this.state.squadMemberId)?.name ?? 'linked')}`
+      : this.state.pendingSquadInvite
+        ? ` | squad invite from ${escapeHtml(this.state.pendingSquadInvite.name)}`
+        : this.state.incomingWarpRequest
+          ? ` | RTW from ${escapeHtml(this.state.incomingWarpRequest.name)}`
+          : '';
     const multiplayerText = multiplayer.connected
-      ? `<b style="color:${hex(COLORS.green)}">Room ${escapeHtml(multiplayer.roomCode || 'OPEN')}</b><span>${Math.min(multiplayer.peerCount || 1, 2)}/2 pilots | ${friendText}</span>`
+      ? `<b style="color:${hex(COLORS.green)}">Room ${escapeHtml(multiplayer.roomCode || 'OPEN')}</b><span>${Math.min(multiplayer.peerCount || 1, 2)}/2 pilots | ${friendText}${squadText}</span>`
       : '<b>Solo flight</b><span>use 2P co-op panel</span>';
 
     this.topHud.innerHTML = `
@@ -109,7 +116,7 @@ export class Hud {
   private renderPrompt() {
     const locked = document.pointerLockElement !== null;
     const lines = locked
-      ? 'WASD move | QE vertical | Shift/Alt/Ctrl boost | B boost lock | mouse/arrow look | Space scan | F trigger | H warp'
+      ? 'WASD move | QE vertical | Shift/Alt/Ctrl boost | B boost lock | mouse/arrow look | Space scan | F trigger | H warp | R accept RTW'
       : 'Click flight view to engage mouse look | T tracker | Y events | U special planets | M map';
     this.promptChip.textContent = lines;
   }
@@ -274,7 +281,7 @@ export class Hud {
     ctx.fillText('UNIVERSE MAP', width / 2, 52);
     ctx.font = '15px Inter, Arial';
     ctx.fillStyle = '#f5f5f5';
-    ctx.fillText('Click targets to warp. Drag empty map space to pan. Planets are hidden.', width / 2, 82);
+    ctx.fillText('Click targets to warp. Click a friend for RTW/direct squad warp. Drag empty space to pan.', width / 2, 82);
     ctx.textAlign = 'left';
 
     for (const target of this.state.mapTargets()) {
@@ -340,7 +347,7 @@ export class Hud {
       ctx.fillStyle = '#d2dcf0';
       ctx.font = '12px Inter, Arial';
       ctx.fillText(`${this.mapHover.kind} | ${Math.round(this.mapHover.distance).toLocaleString()}u`, x + 12, y + 48);
-      ctx.fillText('Click to warp/track. Drag empty space to pan. Press M or Esc to exit.', x + 12, y + 64);
+      ctx.fillText('Click to warp/request. Drag empty space to pan. Press M or Esc to exit.', x + 12, y + 64);
     }
   }
 
@@ -423,8 +430,8 @@ export class Hud {
     const target = this.state.targetFromMap(x, y, this.fullMap.width, this.fullMap.height);
     const pilot = this.remotePlayerFromMap(x, y, this.fullMap.width, this.fullMap.height);
     if (pilot) {
-      this.state.trackedRemotePlayerId = pilot.id;
-      this.state.setMessage(`Tracking ${pilot.name} on the universe map.`, 3);
+      this.state.requestWarpToRemote(pilot);
+      this.state.fullMapOpen = false;
       return;
     }
     if (target) {
@@ -452,7 +459,7 @@ export class Hud {
   }
 
   private remotePlayerFromMap(x: number, y: number, width: number, height: number) {
-    let best: { id: string; name: string; color: number; position: { x: number; y: number; z: number } } | null = null;
+    let best: RemotePlayerState | null = null;
     let bestDistance = Infinity;
     for (const pilot of this.state.remotePlayers.values()) {
       const p = this.state.universeToMap(pilot.position, width, height);

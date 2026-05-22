@@ -2,9 +2,10 @@ export type Vec3 = { x: number; y: number; z: number };
 export type EventPhase = 'dormant' | 'active' | 'aftermath';
 export type TrackerMode = 'nearest' | 'systems';
 
-export const WORLD_SIZE = 1250000;
-export const RENDER_DISTANCE = 56000;
+export const WORLD_SIZE = 1800000;
+export const RENDER_DISTANCE = 74000;
 export const WARP_DURATION = 3.2;
+export const WARP_CHARGE_DURATION = 2.0;
 export const SPECIAL_PLANET_DURATION = 12;
 
 export const COLORS = {
@@ -85,12 +86,17 @@ export interface WorldEvent {
   discovered: boolean;
   systemName: string;
   lingering: number;
+  orbitParent?: SpaceObject;
+  orbitRadius?: number;
+  orbitSpeed?: number;
+  orbitAngle?: number;
+  orbitTilt?: number;
 }
 
 export type Trackable = SpaceObject | WorldEvent;
 
 export function hasPersistentAftermath(kind: string) {
-  return kind !== 'Made in Heaven' && kind !== 'Wormhole';
+  return kind !== 'Made in Heaven' && kind !== 'Wormhole' && kind !== 'Solar System';
 }
 
 export interface PlayerState {
@@ -124,16 +130,41 @@ export interface MultiplayerStatus {
   message: string;
 }
 
+export type WarpPhase = 'idle' | 'charge' | 'jump';
+
+export interface WarpPayload {
+  x: number;
+  y: number;
+  z: number;
+  name: string;
+  color: number;
+}
+
 export interface MultiplayerHooks {
   onLocalEventStart?: (event: WorldEvent) => void;
+  onWarpRequest?: (pilot: RemotePlayerState) => void;
+  onAcceptWarpRequest?: (targetId: string) => void;
+  onSquadInvite?: (pilot: RemotePlayerState) => void;
+  onSquadAccept?: (targetId: string) => void;
+  onSquadLeave?: () => void;
+  onGroupWarpStart?: (payload: WarpPayload) => void;
 }
 
 export interface WarpState {
   active: boolean;
+  phase: WarpPhase;
   timer: number;
   destination: Trackable | null;
+  destinationName: string;
+  destinationColor: number;
   start: Vec3;
   end: Vec3;
+  alignStartYaw: number;
+  alignStartPitch: number;
+  alignEndYaw: number;
+  alignEndPitch: number;
+  groupWarp: boolean;
+  companionId: string | null;
 }
 
 export interface CutsceneState {
@@ -286,6 +317,21 @@ export function smoothstep(value: number) {
   return t * t * (3 - 2 * t);
 }
 
+function lerpAngle(from: number, to: number, t: number) {
+  const delta = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  return from + delta * t;
+}
+
+function angleToPoint(from: Vec3, to: Vec3) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  return {
+    yaw: Math.atan2(dx, dz),
+    pitch: clamp(Math.atan2(dy, Math.max(1, Math.hypot(dx, dz))), -1.32, 1.32)
+  };
+}
+
 export function distance(a: Vec3, b: Vec3) {
   return Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
 }
@@ -411,10 +457,19 @@ export class GameState {
 
   warp: WarpState = {
     active: false,
+    phase: 'idle',
     timer: 0,
     destination: null,
+    destinationName: '',
+    destinationColor: COLORS.cyan,
     start: { x: 0, y: 0, z: 0 },
-    end: { x: 0, y: 0, z: 0 }
+    end: { x: 0, y: 0, z: 0 },
+    alignStartYaw: 0,
+    alignStartPitch: 0,
+    alignEndYaw: 0,
+    alignEndPitch: 0,
+    groupWarp: false,
+    companionId: null
   };
 
   cutscene: CutsceneState = {
@@ -447,6 +502,9 @@ export class GameState {
   selectedTarget: Trackable | null = null;
   remotePlayers = new Map<string, RemotePlayerState>();
   trackedRemotePlayerId: string | null = null;
+  squadMemberId: string | null = null;
+  incomingWarpRequest: { fromId: string; name: string; color: number; position: Vec3 } | null = null;
+  pendingSquadInvite: { fromId: string; name: string; color: number } | null = null;
   multiplayer: MultiplayerStatus = {
     enabled: false,
     connected: false,
@@ -561,16 +619,19 @@ export class GameState {
 
   universeToMap(pos: Vec3, width: number, height: number, includePan = true) {
     const bounds = this.universeMapBounds();
-    const scaleX = width / Math.max(1, bounds.maxX - bounds.minX);
-    const scaleZ = height / Math.max(1, bounds.maxZ - bounds.minZ);
-    const scale = Math.min(scaleX, scaleZ);
-    const usedW = (bounds.maxX - bounds.minX) * scale;
-    const usedH = (bounds.maxZ - bounds.minZ) * scale;
-    const ox = (width - usedW) / 2;
-    const oy = (height - usedH) / 2;
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerZ = (bounds.minZ + bounds.maxZ) / 2;
+    const halfX = Math.max(1, (bounds.maxX - bounds.minX) / 2);
+    const halfZ = Math.max(1, (bounds.maxZ - bounds.minZ) / 2);
+    const nx = (pos.x - centerX) / halfX;
+    const nz = (pos.z - centerZ) / halfZ;
+    const r = Math.hypot(nx, nz);
+    const visualR = r > 0 ? Math.pow(Math.min(1.22, r), 0.72) : 0;
+    const stretch = r > 0 ? visualR / r : 1;
+    const scale = Math.min(width, height) * 0.45;
     return {
-      x: ox + (pos.x - bounds.minX) * scale + (includePan ? this.mapPan.x : 0),
-      y: oy + (pos.z - bounds.minZ) * scale + (includePan ? this.mapPan.y : 0)
+      x: width / 2 + nx * stretch * scale + (includePan ? this.mapPan.x : 0),
+      y: height / 2 + nz * stretch * scale + (includePan ? this.mapPan.y : 0)
     };
   }
 
@@ -610,7 +671,7 @@ export class GameState {
   triggerNearestEvent() {
     const [event] = this.events
       .slice()
-      .filter((item) => item.phase !== 'aftermath' || hasPersistentAftermath(item.kind))
+      .filter((item) => item.phase !== 'aftermath')
       .sort((a, b) => distance(this.player.position, a.position) - distance(this.player.position, b.position));
     if (!event) return;
     const d = distance(this.player.position, event.position);
@@ -642,26 +703,136 @@ export class GameState {
     this.triggerNearestEvent();
   }
 
-  beginWarp(destination: Trackable) {
+  beginWarp(destination: Trackable, options: { fromNetwork?: boolean; groupWarp?: boolean; companionId?: string | null } = {}) {
     const f = forwardVector(this.player);
     const isSpecialPlanet =
       !isEvent(destination) &&
       ['Mega Ringed Giant', 'Diamond Rain Planet', 'Crystal Planet', 'Iron Storm World', 'Ringed Giant'].includes(destination.kind);
     const standoff = isEvent(destination) || isSpecialPlanet ? 3200 : 6200;
-    this.warp.active = true;
-    this.warp.timer = 0;
-    this.warp.destination = destination;
-    this.warp.start = copyVec(this.player.position);
-    this.warp.end = {
+    const end = {
       x: destination.position.x - f.x * standoff,
       y: destination.position.y + (isSpecialPlanet ? 260 : 460),
       z: destination.position.z - f.z * standoff
     };
+    const squadPilot = this.squadMemberId ? this.remotePlayers.get(this.squadMemberId) : null;
+    const shouldGroupWarp =
+      !options.fromNetwork &&
+      !!squadPilot &&
+      distance(this.player.position, squadPilot.position) <= 2000;
+    this.configureWarp({
+      destination,
+      focus: destination.position,
+      end,
+      name: destination.name,
+      color: destination.color,
+      groupWarp: options.groupWarp ?? shouldGroupWarp,
+      companionId: options.companionId ?? (shouldGroupWarp ? squadPilot?.id ?? null : null)
+    });
     this.trackedTarget = destination;
     this.selectedTarget = destination;
     destination.discovered = true;
     this.closeMenus();
-    this.setMessage(`Warp route calculated for ${destination.name}.`, 2.2);
+    this.setMessage(`Aligning for warp to ${destination.name}. Engines charging.`, 2.8);
+    if (shouldGroupWarp) {
+      this.multiplayerHooks.onGroupWarpStart?.({
+        x: end.x,
+        y: end.y,
+        z: end.z,
+        name: destination.name,
+        color: destination.color
+      });
+    }
+  }
+
+  beginWarpToPosition(position: Vec3, name: string, color: number = COLORS.cyan, options: { fromNetwork?: boolean; groupWarp?: boolean; companionId?: string | null; exactEnd?: boolean } = {}) {
+    const f = forwardVector(this.player);
+    const end = options.exactEnd
+      ? copyVec(position)
+      : {
+          x: position.x - f.x * 1700,
+          y: position.y + 180,
+          z: position.z - f.z * 1700
+        };
+    this.configureWarp({
+      destination: null,
+      focus: position,
+      end,
+      name,
+      color,
+      groupWarp: options.groupWarp ?? false,
+      companionId: options.companionId ?? null
+    });
+    this.trackedTarget = null;
+    this.selectedTarget = null;
+    this.closeMenus();
+    this.setMessage(`Aligning for warp to ${name}. Engines charging.`, 2.8);
+  }
+
+  requestWarpToRemote(pilot: RemotePlayerState) {
+    this.trackedRemotePlayerId = pilot.id;
+    if (this.squadMemberId === pilot.id) {
+      this.beginWarpToPosition(pilot.position, pilot.name, pilot.color);
+      return;
+    }
+    this.multiplayerHooks.onWarpRequest?.(pilot);
+    this.setMessage(`Request to warp sent to ${pilot.name}.`, 4);
+  }
+
+  acceptIncomingWarpRequest() {
+    if (!this.incomingWarpRequest) return false;
+    this.multiplayerHooks.onAcceptWarpRequest?.(this.incomingWarpRequest.fromId);
+    this.setMessage(`Warp request accepted for ${this.incomingWarpRequest.name}.`, 3);
+    this.incomingWarpRequest = null;
+    return true;
+  }
+
+  inviteOrLeaveSquad() {
+    if (this.squadMemberId) {
+      this.multiplayerHooks.onSquadLeave?.();
+      this.setMessage('Squad link dissolved.', 3);
+      this.squadMemberId = null;
+      return;
+    }
+    if (this.pendingSquadInvite) {
+      this.squadMemberId = this.pendingSquadInvite.fromId;
+      this.multiplayerHooks.onSquadAccept?.(this.pendingSquadInvite.fromId);
+      this.setMessage(`Squad link formed with ${this.pendingSquadInvite.name}.`, 4);
+      this.pendingSquadInvite = null;
+      return;
+    }
+    const [pilot] = [...this.remotePlayers.values()];
+    if (!pilot) {
+      this.setMessage('No friend pilot connected for squad invite.', 3);
+      return;
+    }
+    this.multiplayerHooks.onSquadInvite?.(pilot);
+    this.setMessage(`Squad invite sent to ${pilot.name}.`, 4);
+  }
+
+  private configureWarp(input: {
+    destination: Trackable | null;
+    focus: Vec3;
+    end: Vec3;
+    name: string;
+    color: number;
+    groupWarp: boolean;
+    companionId: string | null;
+  }) {
+    const aim = angleToPoint(this.player.position, input.focus);
+    this.warp.active = true;
+    this.warp.phase = 'charge';
+    this.warp.timer = 0;
+    this.warp.destination = input.destination;
+    this.warp.destinationName = input.name;
+    this.warp.destinationColor = input.color;
+    this.warp.start = copyVec(this.player.position);
+    this.warp.end = copyVec(input.end);
+    this.warp.alignStartYaw = this.player.yaw;
+    this.warp.alignStartPitch = this.player.pitch;
+    this.warp.alignEndYaw = aim.yaw;
+    this.warp.alignEndPitch = aim.pitch;
+    this.warp.groupWarp = input.groupWarp;
+    this.warp.companionId = input.companionId;
   }
 
   hyperspaceJump() {
@@ -795,6 +966,9 @@ export class GameState {
       this.hyperspaceJump();
       return true;
     }
+    if (code === 'KeyR' && this.incomingWarpRequest) {
+      return this.acceptIncomingWarpRequest();
+    }
     if (code === 'KeyF') {
       this.triggerAction();
       return true;
@@ -883,6 +1057,16 @@ export class GameState {
       obj.position.y =
         parent.position.y + Math.sin(obj.orbitAngle * 0.9) * obj.orbitRadius * obj.orbitTilt;
     }
+    for (const event of this.events) {
+      if (!event.orbitParent || !event.orbitRadius || !event.orbitSpeed) continue;
+      event.orbitAngle = (event.orbitAngle ?? 0) + event.orbitSpeed * dt * 60;
+      const parent = event.orbitParent;
+      const tilt = event.orbitTilt ?? 0;
+      event.position.x = parent.position.x + Math.cos(event.orbitAngle) * event.orbitRadius;
+      event.position.z = parent.position.z + Math.sin(event.orbitAngle) * event.orbitRadius;
+      event.position.y =
+        parent.position.y + Math.sin(event.orbitAngle * 0.9) * event.orbitRadius * tilt;
+    }
   }
 
   private updateEvents(dt: number) {
@@ -949,13 +1133,28 @@ export class GameState {
   }
 
   private updateWarp(dt: number) {
-    if (!this.warp.active || !this.warp.destination) return;
+    if (!this.warp.active) return;
     this.warp.timer += dt;
+    if (this.warp.phase === 'charge') {
+      const t = smoothstep(this.warp.timer / WARP_CHARGE_DURATION);
+      this.player.yaw = lerpAngle(this.warp.alignStartYaw, this.warp.alignEndYaw, t);
+      this.player.pitch = lerpAngle(this.warp.alignStartPitch, this.warp.alignEndPitch, t);
+      if (this.warp.timer >= WARP_CHARGE_DURATION) {
+        this.warp.phase = 'jump';
+        this.warp.timer = 0;
+        this.warp.start = copyVec(this.player.position);
+      }
+      return;
+    }
+
     const t = smoothstep(this.warp.timer / WARP_DURATION);
     this.player.position = lerpVec(this.warp.start, this.warp.end, t);
     if (this.warp.timer >= WARP_DURATION) {
       this.warp.active = false;
-      this.setMessage(`Warp complete. Arrived near ${this.warp.destination.name}.`, 4.5);
+      this.warp.phase = 'idle';
+      this.warp.groupWarp = false;
+      this.warp.companionId = null;
+      this.setMessage(`Warp complete. Arrived near ${this.warp.destinationName}.`, 4.5);
     }
   }
 
@@ -1062,6 +1261,12 @@ export class GameState {
         obj.position.z += dz;
       }
     }
+    for (const event of this.events) {
+      if (event.systemName === system.name) {
+        event.position.x += dx;
+        event.position.z += dz;
+      }
+    }
   }
 
   private separateStarSystems() {
@@ -1073,7 +1278,7 @@ export class GameState {
           let dx = b.position.x - a.position.x;
           let dz = b.position.z - a.position.z;
           let d = Math.hypot(dx, dz);
-          const desired = 52000;
+          const desired = 78000;
           if (d >= desired) continue;
           if (d < 0.001) {
             const angle = ((i * 37 + j * 53) % 360) * (Math.PI / 180);
@@ -1118,11 +1323,11 @@ export class GameState {
   }
 
   private eventMapSpacing(event: WorldEvent) {
-    if (event.kind === 'Made in Heaven') return 130000;
-    if (event.kind === 'Wormhole' || event.kind === 'Quasar') return 115000;
-    if (['Galaxy Collision', 'Supermassive Black Hole', 'Hypernova', 'Neutron Star Merger'].includes(event.kind)) return 95000;
-    if (event.kind === 'Heart Supernova') return 76000;
-    return 56000;
+    if (event.kind === 'Made in Heaven') return 185000;
+    if (event.kind === 'Wormhole' || event.kind === 'Quasar') return 165000;
+    if (['Galaxy Collision', 'Supermassive Black Hole', 'Hypernova', 'Neutron Star Merger'].includes(event.kind)) return 140000;
+    if (event.kind === 'Heart Supernova') return 98000;
+    return 82000;
   }
 
   private distributeWorldEvents() {
@@ -1139,10 +1344,12 @@ export class GameState {
     for (let iteration = 0; iteration < 14; iteration += 1) {
       for (let i = 0; i < this.events.length; i += 1) {
         const event = this.events[i];
+        if (event.orbitParent || event.kind === 'Solar System') continue;
         const ownSpacing = this.eventMapSpacing(event);
 
         for (let j = i + 1; j < this.events.length; j += 1) {
           const other = this.events[j];
+          if (other.orbitParent || other.kind === 'Solar System') continue;
           const desired = Math.max(ownSpacing, this.eventMapSpacing(other));
           let dx = other.position.x - event.position.x;
           let dz = other.position.z - event.position.z;
@@ -1167,14 +1374,106 @@ export class GameState {
           if (event.kind === 'Heart Supernova' && anchor.name === "Zahra's Resonance") continue;
           const desired =
             anchor.kind === 'Star System'
-              ? Math.max(38000, ownSpacing * 0.72)
+              ? Math.max(62000, ownSpacing * 0.78)
               : anchor.kind === 'Quasar' || anchor.kind === 'Galaxy' || anchor.kind === 'Galaxy Pair'
-                ? Math.max(62000, ownSpacing * 0.86)
-                : 42000;
+                ? Math.max(92000, ownSpacing * 0.92)
+                : 68000;
           this.pushEventAway(event, anchor.position.x, anchor.position.z, desired, anchor.seed + iteration, 1.0);
         }
       }
     }
+  }
+
+  private createOurSolarSystem() {
+    const x = -118000;
+    const y = 2200;
+    const z = 126000;
+    const sun = this.createObject({
+      name: 'Solar System',
+      kind: 'Star System',
+      position: { x, y, z },
+      radius: 310,
+      color: COLORS.yellow,
+      description: 'Our home solar system: the Sun, rocky inner worlds, gas giants, ice giants, and the small blue planet where this whole story begins.',
+      orbitRadius: 0,
+      orbitSpeed: 0,
+      orbitAngle: 0,
+      orbitTilt: 0,
+      rings: false,
+      atmosphere: false,
+      moons: 0,
+      seed: 700001,
+      systemName: 'Solar System',
+      heartShape: false,
+      heartStar: false,
+      discovered: true
+    });
+    this.systems.push(sun);
+
+    const planets: Array<{
+      name: string;
+      kind: PlanetKind;
+      radius: number;
+      orbit: number;
+      speed: number;
+      color: number;
+      rings?: boolean;
+      moons?: number;
+      description: string;
+    }> = [
+      { name: 'Mercury', kind: 'Rocky Planet', radius: 38, orbit: 1050, speed: 0.0018, color: 0xa89c91, description: 'A cratered iron-rich world close to the Sun.' },
+      { name: 'Venus', kind: 'Storm Planet', radius: 70, orbit: 1680, speed: 0.00132, color: 0xd9a260, description: 'A bright cloud-wrapped furnace with crushing atmosphere.' },
+      { name: 'Earth', kind: 'Ocean World', radius: 74, orbit: 2360, speed: 0.00108, color: 0x3b8dff, moons: 1, description: 'A blue living world with oceans, clouds, continents, and one pale Moon.' },
+      { name: 'Mars', kind: 'Desert Planet', radius: 55, orbit: 3180, speed: 0.00086, color: 0xc9633d, moons: 2, description: 'A cold rust-red desert world with ancient valleys and polar ice.' },
+      { name: 'Jupiter', kind: 'Gas Giant', radius: 154, orbit: 4620, speed: 0.00048, color: 0xd48a4d, moons: 5, description: 'The largest planet, banded with storms and crowned by a great red vortex.' },
+      { name: 'Saturn', kind: 'Mega Ringed Giant', radius: 136, orbit: 6350, speed: 0.00038, color: 0xd8bd72, rings: true, moons: 6, description: 'A golden giant encircled by a spectacular system of rings.' },
+      { name: 'Uranus', kind: 'Ice World', radius: 112, orbit: 8120, speed: 0.00029, color: 0x78d8dd, rings: true, moons: 4, description: 'A pale tilted ice giant moving with quiet blue-green light.' },
+      { name: 'Neptune', kind: 'Storm Planet', radius: 108, orbit: 9800, speed: 0.00024, color: 0x355dff, moons: 4, description: 'A deep blue ice giant with supersonic winds and distant storms.' }
+    ];
+
+    for (let i = 0; i < planets.length; i += 1) {
+      const planet = planets[i];
+      const angle = i * 0.72 + 0.35;
+      const tilt = i === 6 ? 0.035 : 0.018 + (i % 3) * 0.008;
+      this.createObject({
+        name: planet.name,
+        kind: planet.kind,
+        position: {
+          x: x + Math.cos(angle) * planet.orbit,
+          y: y + Math.sin(angle * 0.9) * planet.orbit * tilt,
+          z: z + Math.sin(angle) * planet.orbit
+        },
+        radius: planet.radius,
+        color: planet.color,
+        description: planet.description,
+        orbitParent: sun,
+        orbitRadius: planet.orbit,
+        orbitSpeed: planet.speed,
+        orbitAngle: angle,
+        orbitTilt: tilt,
+        rings: planet.rings ?? false,
+        atmosphere: true,
+        moons: planet.moons ?? 0,
+        seed: 700100 + i,
+        systemName: 'Solar System',
+        heartShape: false,
+        heartStar: false,
+        discovered: true
+      });
+    }
+
+    this.createEvent({
+      name: 'Solar System',
+      kind: 'Solar System',
+      position: { x: x + 13500, y: y + 900, z: z - 9800 },
+      radius: 1500,
+      color: COLORS.yellow,
+      description: 'A navigation entry for our solar system. A dedicated world event will be added here soon.',
+      aftermath: 'The solar system remains steady, waiting for its future event.',
+      lines: ['The Sun holds eight planets in order.', 'Earth glows blue among them.', 'A future event waits here.'],
+      systemName: 'Solar System',
+      discovered: true
+    });
   }
 
   private generateUniverse(reborn: boolean) {
@@ -1187,9 +1486,9 @@ export class GameState {
 
     for (let i = 0; i < names.length; i += 1) {
       const arm = i % (reborn ? 6 : 5);
-      const radius = (reborn ? 36000 : 32000) + i * (reborn ? 24500 : 22500) + this.rng.int(-7600, 7600);
+      const radius = (reborn ? 52000 : 48000) + i * (reborn ? 36500 : 34000) + this.rng.int(-9600, 9600);
       const theta =
-        arm * ((Math.PI * 2) / (reborn ? 6 : 5)) + radius / (reborn ? 28500 : 30000) + this.rng.range(-0.36, 0.36);
+        arm * ((Math.PI * 2) / (reborn ? 6 : 5)) + radius / (reborn ? 39000 : 41000) + this.rng.range(-0.36, 0.36);
       this.createStarSystem(
         names[i],
         Math.cos(theta) * radius,
@@ -1257,11 +1556,13 @@ export class GameState {
       heartShape: false,
       heartStar: false
     });
+    this.createOurSolarSystem();
+
     const galaxies = [
-      this.makeShowcase('Aurelia Spiral Galaxy', 'Galaxy', 180000, 9000, 210000, 6200, 0x78b4ff, 'A distant spiral galaxy.', 201),
-      this.makeShowcase('The Zahra Veil Galaxy', 'Galaxy', -230000, 14000, 195000, 7200, 0xff78c8, 'A rose-colored galaxy.', 202),
-      this.makeShowcase('Obsidian Maw Galaxy', 'Galaxy', 260000, -10000, -210000, 6800, 0xaa78ff, 'A dark massive galaxy.', 203),
-      this.makeShowcase('Twin Lantern Galaxies', 'Galaxy Pair', -290000, 18000, -260000, 7600, COLORS.gold, 'Two galaxies in gravitational dance.', 204)
+      this.makeShowcase('Aurelia Spiral Galaxy', 'Galaxy', 300000, 9000, 330000, 9400, 0x78b4ff, 'A distant spiral galaxy.', 201),
+      this.makeShowcase('The Zahra Veil Galaxy', 'Galaxy', -375000, 14000, 325000, 10600, 0xff78c8, 'A rose-colored galaxy.', 202),
+      this.makeShowcase('Obsidian Maw Galaxy', 'Galaxy', 420000, -10000, -340000, 10100, 0xaa78ff, 'A dark massive galaxy.', 203),
+      this.makeShowcase('Twin Lantern Galaxies', 'Galaxy Pair', -455000, 18000, -425000, 11400, COLORS.gold, 'Two galaxies in gravitational dance.', 204)
     ];
 
     for (const galaxy of galaxies) {
@@ -1478,6 +1779,34 @@ export class GameState {
 
   private createRealExpansionEvents() {
     const s = this.systems;
+    const atmosphericAnchor = s[17];
+    const escapeAngle = 1.36;
+    const escapeOrbit = 5600;
+    const escapeTilt = 0.052;
+    this.createObject({
+      name: 'Evaporating Heliosphere World',
+      kind: 'Storm Planet',
+      position: {
+        x: atmosphericAnchor.position.x + Math.cos(escapeAngle) * escapeOrbit,
+        y: atmosphericAnchor.position.y + Math.sin(escapeAngle * 0.9) * escapeOrbit * escapeTilt,
+        z: atmosphericAnchor.position.z + Math.sin(escapeAngle) * escapeOrbit
+      },
+      radius: 92,
+      color: 0x64b4ff,
+      description: 'A close-orbiting world whose upper atmosphere is being stripped into a glowing comet-like tail.',
+      orbitParent: atmosphericAnchor,
+      orbitRadius: escapeOrbit,
+      orbitSpeed: 0.00092,
+      orbitAngle: escapeAngle,
+      orbitTilt: escapeTilt,
+      rings: false,
+      atmosphere: true,
+      moons: 0,
+      seed: 812017,
+      systemName: atmosphericAnchor.name,
+      heartShape: false,
+      heartStar: false
+    });
     const specs: Array<[string, string, number, number, number, number, number, string, string, string[]]> = [
       ['Pulsar Lighthouse', 'Pulsar', s[6].position.x + 5200, s[6].position.y + 1800, s[6].position.z - 3600, 1400, 0x78d2ff, 'A rapidly rotating neutron star sweeps radiation beams across space like a cosmic lighthouse.', 'The pulsar remains as a compact beacon, flashing with terrifying precision.', ['The dead core spins faster.', 'Magnetic poles sharpen into beams.', 'Radiation sweeps across the dark.', 'A pulsar lighthouse is born.']],
       ['Planetary Nebula Bloom', 'Planetary Nebula', s[14].position.x - 4800, s[14].position.y + 900, s[14].position.z + 4300, 1600, 0xff87d2, 'A dying star sheds its outer layers, forming a radiant planetary nebula around a white dwarf.', 'A glowing shell remains around the white dwarf, delicate and symmetrical like cosmic stained glass.', ['The old star loosens its atmosphere.', 'Shells of gas drift outward.', 'Ultraviolet light ignites the nebula.', 'A white dwarf glows at the center.']],
@@ -1485,7 +1814,6 @@ export class GameState {
       ['Kilonova Remnant', 'Kilonova', s[31].position.x - 4200, s[31].position.y + 2100, s[31].position.z - 3300, 1700, 0xbe78ff, 'A neutron star merger produces a kilonova, forging heavy elements in expanding ejecta.', 'A purple-gold heavy-element cloud remains where neutron stars collided.', ['Two dense remnants spiral inward.', 'The collision forges heavy elements.', 'Ejecta expands in purple and gold.', 'A kilonova remnant shines.']],
       ['Wolf-Rayet Wind', 'Wolf-Rayet Wind', s[20].position.x + 4500, s[20].position.y + 1300, s[20].position.z - 2900, 1500, 0x6ee6ff, 'A massive Wolf-Rayet star throws off violent stellar winds before its final collapse.', 'A wind-carved bubble remains, glowing blue around the exposed stellar core.', ['The star strips itself bare.', 'Stellar winds carve the surrounding gas.', 'A blue shell expands.', 'The core burns exposed and brilliant.']],
       ['Tidal Lock Eclipse', 'Tidal Lock Eclipse', s[9].position.x + 2600, s[9].position.y + 400, s[9].position.z - 3100, 900, 0x8cd2ff, 'A tidally locked planet shows a burning day side and frozen night side under a perfect eclipse.', 'The terminator line remains razor sharp between fire and ice.', ['The star-facing side burns.', 'The dark side freezes.', 'A moon crosses the star.', 'The terminator glows like a blade.']],
-      ['Atmospheric Escape', 'Atmospheric Escape', s[17].position.x - 2800, s[17].position.y + 600, s[17].position.z + 2600, 900, 0x64b4ff, 'A close-orbiting planet loses its atmosphere into space under extreme stellar radiation.', 'A comet-like atmospheric tail remains, streaming away from the planet.', ['Radiation heats the upper atmosphere.', 'Gas begins to escape.', 'The planet grows a luminous tail.', 'The atmosphere bleeds into space.']],
       ['Cryovolcanic Eruption', 'Cryovolcanism', s[27].position.x + 3000, s[27].position.y - 200, s[27].position.z + 2200, 900, 0xa0e6ff, 'An icy moon erupts with plumes of water, ammonia, and ice crystals.', 'Frozen geyser plumes remain sparkling above the moon surface.', ['Pressure builds beneath the ice.', 'A fracture opens.', 'Cryovolcanic plumes fire upward.', 'Ice crystals glitter in orbit.']]
     ];
 
@@ -1501,6 +1829,27 @@ export class GameState {
         lines: spec[9]
       });
     }
+
+    this.createEvent({
+      name: 'Atmospheric Escape',
+      kind: 'Atmospheric Escape',
+      position: {
+        x: atmosphericAnchor.position.x + Math.cos(escapeAngle) * escapeOrbit,
+        y: atmosphericAnchor.position.y + Math.sin(escapeAngle * 0.9) * escapeOrbit * escapeTilt,
+        z: atmosphericAnchor.position.z + Math.sin(escapeAngle) * escapeOrbit
+      },
+      radius: 900,
+      color: 0x64b4ff,
+      description: 'A close-orbiting planet loses its atmosphere into space under extreme stellar radiation.',
+      aftermath: 'A comet-like atmospheric tail remains, streaming away from the planet.',
+      lines: ['Radiation heats the upper atmosphere.', 'Gas begins to escape.', 'The planet grows a luminous tail.', 'The atmosphere bleeds into space.'],
+      systemName: atmosphericAnchor.name,
+      orbitParent: atmosphericAnchor,
+      orbitRadius: escapeOrbit,
+      orbitSpeed: 0.00092,
+      orbitAngle: escapeAngle,
+      orbitTilt: escapeTilt
+    });
   }
 
   private createWormholeAndDeepSpaceEvents() {

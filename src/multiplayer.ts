@@ -1,5 +1,5 @@
 import { Client, Room } from '@colyseus/sdk';
-import { COLORS, GameState, WorldEvent } from './simulation';
+import { COLORS, GameState, RemotePlayerState, WarpPayload, WorldEvent } from './simulation';
 
 type PlayerPatch = {
   name?: string;
@@ -26,6 +26,18 @@ type EventStartMessage = {
   kind: string;
   originId: string;
   startedAt: number;
+};
+
+type PeerMessage = {
+  originId: string;
+  targetId?: string;
+  name: string;
+  color: number;
+  x?: number;
+  y?: number;
+  z?: number;
+  destination?: WarpPayload;
+  sentAt: number;
 };
 
 const ROOM_NAME = 'galactic_evo';
@@ -86,6 +98,7 @@ export class MultiplayerClient {
   private joinButton = document.querySelector<HTMLButtonElement>('#multiplayerJoin');
   private leaveButton = document.querySelector<HTMLButtonElement>('#multiplayerLeave');
   private copyButton = document.querySelector<HTMLButtonElement>('#multiplayerCopy');
+  private squadButton = document.querySelector<HTMLButtonElement>('#multiplayerSquad');
   private status = document.querySelector<HTMLParagraphElement>('#multiplayerStatus');
 
   constructor(private state: GameState) {
@@ -101,10 +114,17 @@ export class MultiplayerClient {
     this.state.multiplayer.serverUrl = server;
     this.state.multiplayer.roomCode = roomCode;
     this.state.multiplayerHooks.onLocalEventStart = (event) => this.broadcastEventStart(event);
+    this.state.multiplayerHooks.onWarpRequest = (pilot) => this.sendWarpRequest(pilot);
+    this.state.multiplayerHooks.onAcceptWarpRequest = (targetId) => this.sendWarpAccept(targetId);
+    this.state.multiplayerHooks.onSquadInvite = (pilot) => this.sendSquadInvite(pilot);
+    this.state.multiplayerHooks.onSquadAccept = (targetId) => this.sendSquadAccept(targetId);
+    this.state.multiplayerHooks.onSquadLeave = () => this.sendSquadLeave();
+    this.state.multiplayerHooks.onGroupWarpStart = (payload) => this.sendGroupWarp(payload);
 
     this.joinButton?.addEventListener('click', () => void this.join());
     this.leaveButton?.addEventListener('click', () => void this.leave());
     this.copyButton?.addEventListener('click', () => void this.copyInvite());
+    this.squadButton?.addEventListener('click', () => this.state.inviteOrLeaveSquad());
     this.root?.addEventListener('pointerdown', (event) => event.stopPropagation());
     this.root?.addEventListener('click', (event) => event.stopPropagation());
 
@@ -177,11 +197,20 @@ export class MultiplayerClient {
         }
       });
       this.room.onMessage('event:start', (message: EventStartMessage) => this.handleRemoteEvent(message));
+      this.room.onMessage('warp:request', (message: PeerMessage) => this.handleWarpRequest(message));
+      this.room.onMessage('warp:accept', (message: PeerMessage) => this.handleWarpAccept(message));
+      this.room.onMessage('squad:invite', (message: PeerMessage) => this.handleSquadInvite(message));
+      this.room.onMessage('squad:accept', (message: PeerMessage) => this.handleSquadAccept(message));
+      this.room.onMessage('squad:leave', (message: PeerMessage) => this.handleSquadLeave(message));
+      this.room.onMessage('group:warp', (message: PeerMessage) => this.handleGroupWarp(message));
       this.room.onLeave(() => {
         this.room = null;
         this.client = null;
         this.state.remotePlayers.clear();
         this.state.trackedRemotePlayerId = null;
+        this.state.squadMemberId = null;
+        this.state.incomingWarpRequest = null;
+        this.state.pendingSquadInvite = null;
         this.state.multiplayer.connected = false;
         this.state.multiplayer.connecting = false;
         this.state.multiplayer.peerCount = 0;
@@ -215,6 +244,9 @@ export class MultiplayerClient {
     this.client = null;
     this.state.remotePlayers.clear();
     this.state.trackedRemotePlayerId = null;
+    this.state.squadMemberId = null;
+    this.state.incomingWarpRequest = null;
+    this.state.pendingSquadInvite = null;
     this.state.multiplayer.connected = false;
     this.state.multiplayer.connecting = false;
     this.state.multiplayer.peerCount = 0;
@@ -250,6 +282,7 @@ export class MultiplayerClient {
       if (!seen.has(id)) {
         this.state.remotePlayers.delete(id);
         if (this.state.trackedRemotePlayerId === id) this.state.trackedRemotePlayerId = null;
+        if (this.state.squadMemberId === id) this.state.squadMemberId = null;
       }
     }
     this.state.multiplayer.peerCount = players.size ?? seen.size + 1;
@@ -272,6 +305,115 @@ export class MultiplayerClient {
     if (event.name === 'My Love For You') event.discovered = true;
     this.state.startEvent(event, { fromNetwork: true });
     this.state.setMessage(`Your friend triggered ${eventTitle(event)}. Synchronizing cinematic.`, 5);
+  }
+
+  private localPeerPayload() {
+    const { position } = this.state.player;
+    return {
+      name: cleanName(this.nameInput?.value || 'Pilot'),
+      color: colorForSession(this.room?.sessionId || 'local'),
+      x: position.x,
+      y: position.y,
+      z: position.z
+    };
+  }
+
+  private sendWarpRequest(pilot: RemotePlayerState) {
+    if (!this.room || !this.state.multiplayer.connected) return;
+    this.room.send('warp:request', { targetId: pilot.id, ...this.localPeerPayload() });
+  }
+
+  private sendWarpAccept(targetId: string) {
+    if (!this.room || !this.state.multiplayer.connected) return;
+    this.room.send('warp:accept', { targetId, ...this.localPeerPayload() });
+  }
+
+  private sendSquadInvite(pilot: RemotePlayerState) {
+    if (!this.room || !this.state.multiplayer.connected) return;
+    this.room.send('squad:invite', { targetId: pilot.id, ...this.localPeerPayload() });
+  }
+
+  private sendSquadAccept(targetId: string) {
+    if (!this.room || !this.state.multiplayer.connected) return;
+    this.room.send('squad:accept', { targetId, ...this.localPeerPayload() });
+  }
+
+  private sendSquadLeave() {
+    if (!this.room || !this.state.multiplayer.connected) return;
+    this.room.send('squad:leave', this.localPeerPayload());
+  }
+
+  private sendGroupWarp(destination: WarpPayload) {
+    if (!this.room || !this.state.multiplayer.connected || !this.state.squadMemberId) return;
+    this.room.send('group:warp', { targetId: this.state.squadMemberId, destination, ...this.localPeerPayload() });
+  }
+
+  private handleWarpRequest(message: PeerMessage) {
+    if (!this.room || message.originId === this.room.sessionId) return;
+    this.state.incomingWarpRequest = {
+      fromId: message.originId,
+      name: cleanName(message.name),
+      color: message.color || COLORS.cyan,
+      position: {
+        x: Number(message.x) || 0,
+        y: Number(message.y) || 0,
+        z: Number(message.z) || 0
+      }
+    };
+    this.state.setMessage(`${this.state.incomingWarpRequest.name} requests warp to your location. Press R to approve.`, 6);
+  }
+
+  private handleWarpAccept(message: PeerMessage) {
+    if (!this.room || message.originId === this.room.sessionId) return;
+    if (message.targetId && message.targetId !== this.room.sessionId) return;
+    this.state.beginWarpToPosition(
+      { x: Number(message.x) || 0, y: Number(message.y) || 0, z: Number(message.z) || 0 },
+      cleanName(message.name),
+      message.color || COLORS.cyan,
+      { fromNetwork: true }
+    );
+  }
+
+  private handleSquadInvite(message: PeerMessage) {
+    if (!this.room || message.originId === this.room.sessionId) return;
+    this.state.pendingSquadInvite = {
+      fromId: message.originId,
+      name: cleanName(message.name),
+      color: message.color || COLORS.cyan
+    };
+    this.state.setMessage(`${this.state.pendingSquadInvite.name} invited you to a squad. Press Squad in the 2P panel to accept.`, 6);
+    this.renderPanel();
+  }
+
+  private handleSquadAccept(message: PeerMessage) {
+    if (!this.room || message.originId === this.room.sessionId) return;
+    if (message.targetId && message.targetId !== this.room.sessionId) return;
+    this.state.squadMemberId = message.originId;
+    this.state.pendingSquadInvite = null;
+    this.state.setMessage(`Squad link formed with ${cleanName(message.name)}.`, 5);
+    this.renderPanel();
+  }
+
+  private handleSquadLeave(message: PeerMessage) {
+    if (!this.room || message.originId === this.room.sessionId) return;
+    if (this.state.squadMemberId === message.originId) {
+      this.state.squadMemberId = null;
+      this.state.setMessage(`${cleanName(message.name)} left the squad.`, 4);
+      this.renderPanel();
+    }
+  }
+
+  private handleGroupWarp(message: PeerMessage) {
+    if (!this.room || message.originId === this.room.sessionId || !message.destination) return;
+    if (message.targetId && message.targetId !== this.room.sessionId) return;
+    if (this.state.squadMemberId !== message.originId) return;
+    this.state.beginWarpToPosition(
+      { x: Number(message.destination.x) || 0, y: Number(message.destination.y) || 0, z: Number(message.destination.z) || 0 },
+      message.destination.name || 'Squad destination',
+      message.destination.color || COLORS.cyan,
+      { fromNetwork: true, groupWarp: true, companionId: message.originId, exactEnd: true }
+    );
+    this.state.setMessage(`${cleanName(message.name)} initiated squad warp.`, 4);
   }
 
   private async copyInvite() {
@@ -313,5 +455,9 @@ export class MultiplayerClient {
       this.joinButton.textContent = connecting ? 'Connecting...' : 'Host / Join';
     }
     if (this.leaveButton) this.leaveButton.disabled = !connected;
+    if (this.squadButton) {
+      this.squadButton.disabled = !connected || this.state.remotePlayers.size === 0;
+      this.squadButton.textContent = this.state.squadMemberId ? 'Leave Squad' : this.state.pendingSquadInvite ? 'Accept Squad' : 'Squad';
+    }
   }
 }

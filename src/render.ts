@@ -318,6 +318,8 @@ function makeConstellations() {
 
   for (let c = 0; c < designs.length; c += 1) {
     const design = designs[c];
+    const designGroup = new THREE.Group();
+    designGroup.userData.region = c;
     const centerA = design.center[0];
     const centerU = design.center[1];
     const radius = 1320 + c * 28;
@@ -340,13 +342,13 @@ function makeConstellations() {
         depthWrite: false
       })
     );
-    group.add(lines);
+    designGroup.add(lines);
 
     const veil = makeParticleCloud(80, 42, design.tint, 7420 + c * 83, 0.42, 0.52);
     const constellationCenter = constellationPatchPoint(centerA, centerU, 0, 0, radius);
     veil.position.copy(constellationCenter).multiplyScalar(0.985);
     veil.scale.set(1.35, 0.42, 0.1);
-    group.add(veil);
+    designGroup.add(veil);
 
     for (let i = 0; i < points.length; i += 1) {
       const weight = design.points[i][2];
@@ -363,7 +365,7 @@ function makeConstellations() {
       star.position.copy(points[i]);
       const starSize = 4.8 + weight * 3.4;
       star.scale.set(starSize, starSize, 1);
-      group.add(star);
+      designGroup.add(star);
 
       if (weight > 1.1) {
         const halo = new THREE.Sprite(
@@ -378,13 +380,14 @@ function makeConstellations() {
         );
         halo.position.copy(points[i]);
         halo.scale.set(starSize * 3.4, starSize * 3.4, 1);
-        group.add(halo);
+        designGroup.add(halo);
       }
     }
 
     const label = createConstellationLabel(design.name, design.tint);
     label.position.copy(constellationPatchPoint(centerA, centerU, 0, -1.85, radius));
-    group.add(label);
+    designGroup.add(label);
+    group.add(designGroup);
   }
 
   return group;
@@ -688,12 +691,12 @@ function makeSpiralArms(arms: number, pointsPerArm: number, radius: number, tint
 
 function makeSoftGalaxyDisc(size: number, tint: number, seed: number) {
   const group = new THREE.Group();
-  group.add(makeGlowSprite(tint, size * 5.2, 0.18), makeParticleCloud(1400, size * 1.35, tint, seed, 0.16, Math.max(0.055, size * 0.01)));
-  const arms = makeSpiralArms(5, 210, size * 1.9, tint, seed + 1, 0.62);
-  arms.scale.y = 0.72;
+  group.add(makeGlowSprite(tint, size * 6.6, 0.22), makeGlowSprite(COLORS.softWhite, size * 2.2, 0.1), makeParticleCloud(3100, size * 1.85, tint, seed, 0.18, Math.max(0.05, size * 0.008)));
+  const arms = makeSpiralArms(7, 340, size * 2.55, tint, seed + 1, 0.7);
+  arms.scale.y = 0.64;
   group.add(arms);
   const core = new THREE.Mesh(
-    new THREE.SphereGeometry(size * 0.13, 32, 16),
+    new THREE.SphereGeometry(size * 0.18, 42, 18),
     new THREE.MeshBasicMaterial({ color: mixHex(tint, COLORS.white, 0.55), transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending, depthWrite: false })
   );
   group.add(core);
@@ -733,15 +736,15 @@ function makeSmoothTidalBridge(size: number, leftTint: number, rightTint: number
 
 function makeElegantGalaxyPair(size: number, leftTint: number, rightTint: number, seed: number) {
   const group = new THREE.Group();
-  const left = makeSoftGalaxyDisc(size * 0.86, leftTint, seed + 1);
-  const right = makeSoftGalaxyDisc(size * 0.84, rightTint, seed + 2);
-  left.position.set(-size * 1.35, size * 0.15, 0);
-  right.position.set(size * 1.35, -size * 0.12, 0);
-  left.rotation.z = -0.34;
-  right.rotation.z = 0.42;
-  group.add(makeGlowSprite(mixHex(leftTint, rightTint, 0.5), size * 5.4, 0.14));
-  group.add(left, right, makeSmoothTidalBridge(size, leftTint, rightTint, seed + 3));
-  group.add(makeParticleCloud(900, size * 2.9, mixHex(leftTint, rightTint, 0.55), seed + 4, 0.22, size * 0.01));
+  const left = makeSoftGalaxyDisc(size * 1.08, leftTint, seed + 1);
+  const right = makeSoftGalaxyDisc(size * 1.02, rightTint, seed + 2);
+  left.position.set(-size * 1.55, size * 0.18, 0);
+  right.position.set(size * 1.55, -size * 0.14, 0);
+  left.rotation.z = -0.48;
+  right.rotation.z = 0.56;
+  group.add(makeGlowSprite(mixHex(leftTint, rightTint, 0.5), size * 7.2, 0.18));
+  group.add(left, right, makeSmoothTidalBridge(size * 1.35, leftTint, rightTint, seed + 3));
+  group.add(makeParticleCloud(1900, size * 3.8, mixHex(leftTint, rightTint, 0.55), seed + 4, 0.24, size * 0.007));
   return group;
 }
 
@@ -1014,6 +1017,7 @@ export class UniverseRenderer {
     this.backdrop.rotation.x = -state.player.pitch * 0.05;
     this.constellations.rotation.y = state.player.yaw * 0.045 + elapsed * 0.001;
     this.constellations.rotation.x = -state.player.pitch * 0.025;
+    this.updateConstellationRegions(state);
 
     this.starLayers.forEach((layer, i) => {
       layer.rotation.y = state.player.yaw * (0.06 + i * 0.03) + elapsed * (0.002 + i * 0.001);
@@ -1026,7 +1030,12 @@ export class UniverseRenderer {
       const rel = subVec(target.position, state.player.position);
       const d = distance(state.player.position, target.position);
       const planetViewDistance = !isEvent(target) && PLANET_SET.has(target.kind) ? Math.min(state.renderDistance, 34000) : state.renderDistance;
-      group.visible = d < planetViewDistance || target === state.trackedTarget || target === state.selectedTarget;
+      const farBeacon =
+        !isEvent(target) &&
+        ['Star System', 'Galaxy', 'Galaxy Pair'].includes(target.kind) &&
+        d >= planetViewDistance &&
+        d < state.renderDistance * 4.6;
+      group.visible = d < planetViewDistance || farBeacon || target === state.trackedTarget || target === state.selectedTarget;
       group.position.set(rel.x * RENDER_SCALE, rel.y * RENDER_SCALE, rel.z * RENDER_SCALE);
 
       const spinRate = (group.userData.spinRate as number | undefined) ?? 0.1;
@@ -1034,9 +1043,16 @@ export class UniverseRenderer {
       if (naturalRoot) naturalRoot.rotation.y += dt * spinRate;
       if (isEvent(target)) group.rotation.y += dt * 0.18;
 
+      const distantBeacon = group.userData.distantBeacon as THREE.Object3D | undefined;
+      if (distantBeacon) {
+        distantBeacon.visible = farBeacon;
+        const fade = THREE.MathUtils.clamp(1 - (d - planetViewDistance) / Math.max(1, state.renderDistance * 3.6), 0.12, 0.82);
+        distantBeacon.scale.setScalar((target.kind === 'Star System' ? 7.5 : 13) * fade);
+      }
+
       const label = group.userData.label as THREE.Object3D | undefined;
       if (label) {
-        label.visible = d < 90000 || target === state.trackedTarget || target === state.selectedTarget;
+        label.visible = !farBeacon && (d < 90000 || target === state.trackedTarget || target === state.selectedTarget);
       }
 
       const trackRing = group.userData.trackRing as THREE.Object3D | undefined;
@@ -1064,6 +1080,16 @@ export class UniverseRenderer {
     this.renderer.setSize(width, height);
     this.composer.setSize(width, height);
     this.bloom.setSize(width, height);
+  }
+
+  private updateConstellationRegions(state: GameState) {
+    const count = Math.max(1, this.constellations.children.length);
+    const angle = (Math.atan2(state.player.position.z, state.player.position.x) + Math.PI * 2) % (Math.PI * 2);
+    const active = Math.floor((angle / (Math.PI * 2)) * count) % count;
+    this.constellations.children.forEach((child, index) => {
+      const diff = Math.min(Math.abs(index - active), count - Math.abs(index - active));
+      child.visible = diff <= 1;
+    });
   }
 
   private rebuild(state: GameState) {
@@ -1311,6 +1337,12 @@ export class UniverseRenderer {
       group.userData.label = label;
       group.add(label);
     }
+    if (obj.kind === 'Star System' || obj.kind === 'Galaxy' || obj.kind === 'Galaxy Pair') {
+      const distant = this.spriteGlow(mixHex(obj.color, COLORS.white, obj.kind === 'Star System' ? 0.32 : 0.18), obj.kind === 'Star System' ? 9 : 15, obj.kind === 'Star System' ? 0.36 : 0.2);
+      distant.visible = false;
+      group.userData.distantBeacon = distant;
+      group.add(distant);
+    }
     return group;
   }
 
@@ -1431,19 +1463,23 @@ export class UniverseRenderer {
   private makeGalaxy(obj: SpaceObject, size: number) {
     const group = new THREE.Group();
     const rand = seeded(obj.seed);
-    const count = obj.kind === 'Galaxy Pair' ? 2400 : 1700;
+    const count = obj.kind === 'Galaxy Pair' ? 7200 : 5200;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
-    const arms = obj.kind === 'Galaxy Pair' ? 6 : 4;
+    const arms = obj.kind === 'Galaxy Pair' ? 8 : 5;
     for (let i = 0; i < count; i += 1) {
       const arm = i % arms;
-      const u = rand();
-      const r = size * Math.sqrt(u) * (0.18 + rand() * 1.05);
-      const a = (arm * Math.PI * 2) / arms + r * 0.14 + rand() * 0.75;
-      positions[i * 3] = Math.cos(a) * r + (obj.kind === 'Galaxy Pair' && i % 2 ? size * 0.95 : 0);
-      positions[i * 3 + 1] = (rand() - 0.5) * size * 0.12;
-      positions[i * 3 + 2] = Math.sin(a) * r * 0.36;
-      const c = color(rand() > 0.45 ? obj.color : COLORS.softWhite, 0.58 + rand() * 0.8);
+      const u = Math.pow(rand(), 0.62);
+      const r = size * (0.08 + u * (1.8 + rand() * 0.42));
+      const swirl = r * 0.095 + u * 4.1;
+      const a = (arm * Math.PI * 2) / arms + swirl + (rand() - 0.5) * (0.34 + u * 0.22);
+      const pairOffset = obj.kind === 'Galaxy Pair' ? (i % 2 ? size * 1.35 : -size * 0.85) : 0;
+      const tidal = obj.kind === 'Galaxy Pair' ? Math.sin(u * Math.PI) * size * 0.55 * (i % 2 ? 1 : -1) : 0;
+      positions[i * 3] = Math.cos(a) * r + pairOffset + tidal;
+      positions[i * 3 + 1] = (rand() - 0.5) * size * (0.1 + u * 0.08);
+      positions[i * 3 + 2] = Math.sin(a) * r * (0.3 + u * 0.14);
+      const palette = rand() > 0.58 ? obj.color : rand() > 0.38 ? COLORS.softWhite : rand() > 0.18 ? COLORS.cyan : COLORS.gold;
+      const c = color(palette, 0.48 + rand() * 1.05);
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
@@ -1457,12 +1493,16 @@ export class UniverseRenderer {
         size: obj.kind === 'Galaxy Pair' ? 0.16 : 0.2,
         vertexColors: true,
         transparent: true,
-        opacity: 0.82,
+        opacity: 0.9,
         blending: THREE.AdditiveBlending,
         depthWrite: false
       })
     );
-    group.add(this.spriteGlow(obj.color, size * 2.2, 0.08), points);
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(size * 0.16, 48, 20),
+      new THREE.MeshBasicMaterial({ color: mixHex(obj.color, COLORS.white, 0.48), transparent: true, opacity: 0.88, blending: THREE.AdditiveBlending })
+    );
+    group.add(this.spriteGlow(obj.color, size * 4.1, 0.16), this.spriteGlow(COLORS.softWhite, size * 1.8, 0.12), core, points);
     return group;
   }
 
@@ -1483,16 +1523,28 @@ export class UniverseRenderer {
   private makeBlackHoleLike(size: number, tint: number, jet = false) {
     const group = new THREE.Group();
     const shadow = new THREE.Mesh(new THREE.SphereGeometry(size * 0.45, 48, 24), new THREE.MeshBasicMaterial({ color: COLORS.black }));
-    const photon = this.torus(size * 0.72, size * 0.018, COLORS.white, 0.72);
-    const disk1 = this.flatDisk(size * 1.95, size * 0.55, COLORS.gold, 0.34);
-    const disk2 = this.flatDisk(size * 2.6, size * 0.9, tint, 0.22);
-    disk1.rotation.x = Math.PI * 0.5;
-    disk2.rotation.x = Math.PI * 0.5;
-    group.add(disk2, disk1, shadow, photon);
+    const photon = this.torus(size * 0.72, size * 0.018, COLORS.white, 0.78);
+    group.add(this.spriteGlow(tint, size * 5.0, 0.1));
+    for (let i = 0; i < 9; i += 1) {
+      const disk = this.flatDisk(size * (1.5 + i * 0.24), size * (0.54 + i * 0.12), i % 3 === 0 ? COLORS.gold : i % 3 === 1 ? tint : COLORS.orange, 0.24 - i * 0.018);
+      disk.rotation.x = Math.PI * (0.47 + i * 0.006);
+      disk.rotation.y = Math.PI * 0.035;
+      disk.rotation.z = i * 0.16;
+      disk.scale.y = 0.34 + i * 0.018;
+      group.add(disk);
+    }
+    for (let i = 0; i < 7; i += 1) {
+      const lens = this.torus(size * (0.86 + i * 0.28), size * (0.012 + i * 0.002), i % 2 ? COLORS.softWhite : mixHex(tint, COLORS.gold, 0.35), 0.38 - i * 0.035);
+      lens.rotation.x = Math.PI * (0.46 + i * 0.016);
+      lens.rotation.y = i * 0.11;
+      lens.scale.y = 0.48 + i * 0.035;
+      group.add(lens);
+    }
+    group.add(shadow, photon);
     if (jet) {
       group.add(this.beam(size * 7, size * 0.06, COLORS.cyan, 'y', 0.28));
     }
-    group.add(makeParticleCloud(280, size * 3.0, tint, Math.round(size * 80), 0.34, 0.12));
+    group.add(makeParticleCloud(520, size * 3.6, tint, Math.round(size * 80), 0.34, 0.105));
     return group;
   }
 
@@ -1632,30 +1684,38 @@ export class UniverseRenderer {
         })
       );
       const initials = makeCinemaTextSprite('Z + M', COLORS.gold, 600, 220);
-      initials.position.set(0, -size * 0.08, size * 0.62);
-      initials.scale.set(size * 1.9, size * 0.72, 1);
+      initials.position.set(0, size * 2.65, size * 0.92);
+      initials.scale.set(size * 2.25, size * 0.84, 1);
       (initials.material as THREE.SpriteMaterial).depthTest = false;
-      group.add(this.spriteGlow(tint, size * 11.5, 0.34), this.spriteGlow(COLORS.gold, size * 7.5, 0.14), heart, shell, initials);
+      const initialStar = this.spriteGlow(COLORS.gold, size * 4.8, 0.3);
+      initialStar.position.copy(initials.position);
+      group.add(this.spriteGlow(tint, size * 11.5, 0.34), this.spriteGlow(COLORS.gold, size * 7.5, 0.14), heart, shell, initialStar, initials);
       group.add(makeParticleCloud(900, size * 4.9, tint, seed + 1, 0.58, 0.11));
       this.addShockRings(group, 10, size * 1.08, size * 0.4, COLORS.gold, 0.4, 0.52);
       return group;
     }
 
     if (kind === 'Galaxy Collision') {
-      group.add(this.spriteGlow(mixHex(tint, COLORS.gold, 0.45), size * 10.5, 0.2));
-      group.add(makeSpiralArms(16, 280, size * 4.9, mixHex(tint, COLORS.white, 0.25), seed + 2, 0.52));
-      group.add(makeSmoothTidalBridge(size * 2.4, COLORS.cyan, COLORS.gold, seed + 3));
-      group.add(makeParticleCloud(1700, size * 4.6, COLORS.gold, seed + 4, 0.36, 0.13));
-      this.addShockRings(group, 12, size * 0.82, size * 0.36, mixHex(tint, COLORS.gold, 0.5), 0.28, 0.38);
+      const plane = new THREE.Group();
+      plane.rotation.x = Math.PI / 2;
+      plane.add(makeSpiralArms(22, 360, size * 6.4, mixHex(tint, COLORS.white, 0.25), seed + 2, 0.58));
+      plane.add(makeSmoothTidalBridge(size * 3.4, COLORS.cyan, COLORS.gold, seed + 3));
+      plane.add(makeParticleCloud(3200, size * 5.6, COLORS.gold, seed + 4, 0.36, 0.12));
+      plane.add(makeParticleCloud(1800, size * 4.6, COLORS.cyan, seed + 104, 0.28, 0.09));
+      group.add(this.spriteGlow(mixHex(tint, COLORS.gold, 0.45), size * 13.5, 0.24), this.spriteGlow(COLORS.cyan, size * 9.4, 0.08), plane);
+      this.addShockRings(group, 18, size * 0.82, size * 0.42, mixHex(tint, COLORS.gold, 0.5), 0.34, 0.5);
       return group;
     }
 
     if (kind === 'Planet Collision') {
       const molten = this.eventPlanet(size * 0.64, COLORS.orange, seed + 5);
-      group.add(this.spriteGlow(COLORS.red, size * 6.4, 0.24), molten);
-      group.add(makeRadialRays(90, size * 0.28, size * 2.8, COLORS.orange, seed + 6, 0.7, 0.42));
-      group.add(makeDiamondShardField(70, size * 2.2, COLORS.gold, seed + 7, size * 0.026));
-      this.addShockRings(group, 10, size * 0.92, size * 0.26, COLORS.gold, 0.42, 0.48);
+      const plane = new THREE.Group();
+      plane.rotation.x = Math.PI / 2;
+      plane.add(makeRadialRays(180, size * 0.35, size * 3.9, COLORS.orange, seed + 6, 0.72, 0.52));
+      plane.add(makeDiamondShardField(180, size * 3.0, COLORS.gold, seed + 7, size * 0.03));
+      plane.add(makeParticleCloud(1300, size * 2.8, COLORS.orange, seed + 107, 0.36, 0.1));
+      group.add(this.spriteGlow(COLORS.red, size * 7.4, 0.28), this.spriteGlow(COLORS.gold, size * 5.2, 0.12), molten, plane);
+      this.addShockRings(group, 14, size * 0.92, size * 0.32, COLORS.gold, 0.48, 0.5);
       return group;
     }
 
@@ -1672,7 +1732,7 @@ export class UniverseRenderer {
     }
 
     if (kind.includes('Black Hole') || kind === 'Quasar' || kind === 'Tidal Disruption') {
-      group.add(this.makeBlackHoleLike(size * 1.18, tint, kind === 'Quasar' || kind === 'Supermassive Black Hole'));
+      group.add(this.makeBlackHoleLike(size * 1.18, tint, kind === 'Quasar'));
       group.add(this.spriteGlow(COLORS.gold, size * 7.8, 0.13), this.spriteGlow(COLORS.purple, size * 5.4, 0.08));
       group.add(makeSpiralArms(kind === 'Tidal Disruption' ? 7 : 5, 180, size * 4.2, COLORS.gold, seed + 11, kind === 'Tidal Disruption' ? 0.82 : 0.5));
       this.addShockRings(group, 12, size * 0.92, size * 0.34, mixHex(tint, COLORS.white, 0.24), 0.3, 0.36);
@@ -1680,10 +1740,13 @@ export class UniverseRenderer {
     }
 
     if (kind === 'Neutron Star Merger' || kind === 'Kilonova') {
-      group.add(this.spriteGlow(COLORS.purple, size * 8.4, 0.26), this.spriteGlow(COLORS.gold, size * 6.4, 0.14));
-      group.add(makeSpiralArms(11, 220, size * 4.2, COLORS.gold, seed + 12, 0.48));
-      group.add(makeParticleCloud(1700, size * 4.4, tint, seed + 13, 0.52, 0.14));
-      this.addShockRings(group, 13, size * 0.72, size * 0.36, tint, 0.36, 0.48);
+      const plane = new THREE.Group();
+      plane.rotation.x = Math.PI / 2;
+      plane.add(makeSpiralArms(16, 300, size * 5.3, COLORS.gold, seed + 12, 0.58));
+      plane.add(makeParticleCloud(2600, size * 4.9, tint, seed + 13, 0.52, 0.12));
+      plane.add(makeParticleCloud(1600, size * 4.0, COLORS.purple, seed + 113, 0.44, 0.09));
+      group.add(this.spriteGlow(COLORS.purple, size * 9.8, 0.28), this.spriteGlow(COLORS.gold, size * 7.6, 0.16), plane);
+      this.addShockRings(group, 16, size * 0.72, size * 0.4, tint, 0.42, 0.5);
       return group;
     }
 
@@ -1774,7 +1837,7 @@ export class UniverseRenderer {
     }
 
     if (kind.includes('Black Hole') || kind === 'Tidal Disruption' || kind === 'Quasar') {
-      const blackHole = this.makeBlackHoleLike(size * 1.38, tint, kind === 'Quasar' || kind === 'Supermassive Black Hole');
+      const blackHole = this.makeBlackHoleLike(size * 1.38, tint, kind === 'Quasar');
       group.add(blackHole);
       group.add(this.spriteGlow(COLORS.gold, size * 9.2, 0.15), this.spriteGlow(COLORS.purple, size * 6.4, 0.08));
       group.add(makeSpiralArms(kind === 'Tidal Disruption' ? 6 : 5, 190, size * 5.1, COLORS.gold, seed + 7, kind === 'Tidal Disruption' ? 0.88 : 0.62));
@@ -1896,10 +1959,7 @@ export class UniverseRenderer {
     }
 
     if (kind === 'Made in Heaven') {
-      const core = new THREE.Mesh(new THREE.SphereGeometry(size * 0.52, 48, 24), new THREE.MeshBasicMaterial({ color: COLORS.white, blending: THREE.AdditiveBlending }));
-      group.add(this.spriteGlow(COLORS.white, size * 9.5, 0.36), core, makeSpiralArms(9, 110, size * 5.0, COLORS.softWhite, seed + 35, 0.6));
-      group.add(makeRadialRays(144, size * 0.55, size * 5.8, COLORS.white, seed + 36, 1, 0.62));
-      this.addShockRings(group, 12, size * 0.9, size * 0.44, COLORS.gold, 0.44, 0.5);
+      group.add(this.makeMadeInHeavenMarker(size, seed + 35));
       return group;
     }
 
@@ -1977,6 +2037,40 @@ export class UniverseRenderer {
       ring.rotation.z = i * 0.25;
       ring.position.z = -i * 0.18;
       group.add(ring);
+    }
+    return group;
+  }
+
+  private makeMadeInHeavenMarker(size: number, seed: number) {
+    const group = new THREE.Group();
+    const rand = seeded(seed);
+    const body = new THREE.Mesh(
+      new THREE.SphereGeometry(size * 0.42, 48, 20),
+      new THREE.MeshBasicMaterial({ color: COLORS.white, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending })
+    );
+    group.add(this.spriteGlow(COLORS.white, size * 7.8, 0.28), this.spriteGlow(COLORS.gold, size * 5.5, 0.1), body);
+    for (let side of [-1, 1] as const) {
+      const positions: number[] = [];
+      for (let i = 0; i < 22; i += 1) {
+        const y = -size * 0.65 + i * size * 0.07;
+        positions.push(side * size * 0.22, y, 0);
+        positions.push(side * size * (0.72 + i * 0.075), y + size * (0.25 + i * 0.052), (rand() - 0.5) * size * 0.16);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      group.add(
+        new THREE.LineSegments(
+          geometry,
+          new THREE.LineBasicMaterial({ color: side < 0 ? COLORS.softWhite : COLORS.cyan, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })
+        )
+      );
+    }
+    for (let i = 0; i < 5; i += 1) {
+      const halo = this.torus(size * (0.78 + i * 0.28), size * 0.012, i % 2 ? COLORS.gold : COLORS.softWhite, 0.42 - i * 0.055);
+      halo.rotation.x = Math.PI * (0.5 + i * 0.03);
+      halo.rotation.z = i * 0.34;
+      halo.scale.y = 0.52;
+      group.add(halo);
     }
     return group;
   }
@@ -2098,7 +2192,7 @@ export class UniverseRenderer {
   }
 
   private objectSize(obj: SpaceObject) {
-    if (obj.kind === 'Galaxy' || obj.kind === 'Galaxy Pair') return Math.max(17, obj.radius * 0.016);
+    if (obj.kind === 'Galaxy' || obj.kind === 'Galaxy Pair') return Math.max(32, obj.radius * 0.026);
     if (obj.kind === 'Nebula' || obj.kind === 'Star Cluster') return Math.max(9, obj.radius * 0.012);
     if (obj.kind === 'Star System') return Math.max(3.4, obj.radius * 0.02);
     if (obj.kind === 'Mega Ringed Giant') return Math.max(2.6, obj.radius * 0.019);
@@ -2114,6 +2208,7 @@ class CinematicDirector {
   private rings: THREE.Object3D[] = [];
   private staged: THREE.Object3D[] = [];
   private pulseTargets: THREE.Object3D[] = [];
+  private dancers: THREE.Object3D[] = [];
 
   update(state: GameState, dt: number) {
     const event = state.cutscene.active ? state.cutscene.event : null;
@@ -2146,6 +2241,7 @@ class CinematicDirector {
     }
     this.updateStaged(rawT);
     this.updatePulses(timer, rawT);
+    this.updateDancers(timer, rawT);
   }
 
   private build(event: WorldEvent | null, special: Trackable | null) {
@@ -2154,6 +2250,7 @@ class CinematicDirector {
     this.rings = [];
     this.staged = [];
     this.pulseTargets = [];
+    this.dancers = [];
     this.core = undefined;
     this.particles = undefined;
 
@@ -2254,6 +2351,12 @@ class CinematicDirector {
     return obj;
   }
 
+  private dancer<T extends THREE.Object3D>(obj: T, start: number, end: number, radiusFrom: number, radiusTo: number, speed: number, side: -1 | 1, flatten = 0.42) {
+    obj.userData.dance = { start, end, radiusFrom, radiusTo, speed, side, flatten };
+    this.dancers.push(obj);
+    return obj;
+  }
+
   private updatePulses(timer: number, t: number) {
     for (const obj of this.pulseTargets) {
       const pulse = obj.userData.pulse as { start: number; end: number; amplitude: number; speed: number; baseScale: THREE.Vector3 };
@@ -2261,6 +2364,18 @@ class CinematicDirector {
       const active = smoothstep((t - pulse.start) / fade) * (1 - smoothstep((t - pulse.end) / fade));
       const beat = 1 + Math.sin(timer * pulse.speed) * pulse.amplitude * active;
       obj.scale.copy(pulse.baseScale).multiplyScalar(beat);
+    }
+  }
+
+  private updateDancers(timer: number, t: number) {
+    for (const obj of this.dancers) {
+      const dance = obj.userData.dance as { start: number; end: number; radiusFrom: number; radiusTo: number; speed: number; side: -1 | 1; flatten: number };
+      const local = THREE.MathUtils.clamp((t - dance.start) / Math.max(0.001, dance.end - dance.start), 0, 1);
+      const eased = smoothstep(local);
+      const radius = THREE.MathUtils.lerp(dance.radiusFrom, dance.radiusTo, eased);
+      const angle = timer * dance.speed + (dance.side < 0 ? 0 : Math.PI);
+      obj.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius * dance.flatten, Math.sin(angle * 1.7) * radius * 0.08);
+      obj.rotation.z = angle * 0.6;
     }
   }
 
@@ -2531,32 +2646,46 @@ class CinematicDirector {
 
   private buildGalaxyCollisionCinematic(event: WorldEvent, tint: number, seed: number) {
     const approach = new THREE.Group();
-    approach.add(makeElegantGalaxyPair(20, COLORS.cyan, COLORS.gold, seed + 401));
-    approach.add(this.cinematicGlow(mixHex(tint, COLORS.gold, 0.45), 96, 0.14), this.cinematicGlow(COLORS.cyan, 78, 0.1));
-    this.addStage(approach, 0, 0.52, 0.78, 1.12);
+    const left = makeSoftGalaxyDisc(24, COLORS.cyan, seed + 401);
+    const right = makeSoftGalaxyDisc(23, COLORS.gold, seed + 402);
+    left.position.set(-48, 7, 0);
+    right.position.set(48, -6, 0);
+    left.rotation.z = -0.62;
+    right.rotation.z = 0.66;
+    approach.add(left, right, this.cinematicGlow(mixHex(tint, COLORS.gold, 0.45), 118, 0.16), this.cinematicGlow(COLORS.cyan, 90, 0.12));
+    approach.add(makeParticleCloud(2600, 68, mixHex(COLORS.cyan, COLORS.gold, 0.5), seed + 403, 0.2, 0.08));
+    this.addStage(approach, 0, 0.5, 0.82, 1.02);
 
     const tidal = new THREE.Group();
-    tidal.add(this.cinematicGlow(tint, 98, 0.22), this.cinematicGlow(COLORS.gold, 80, 0.14), this.cinematicGlow(COLORS.cyan, 66, 0.12));
-    tidal.add(makeSmoothTidalBridge(31, COLORS.cyan, COLORS.gold, seed + 411));
-    tidal.add(makeSpiralArms(12, 280, 54, tint, seed + 405, 0.54));
-    tidal.add(makeParticleCloud(4800, 55, mixHex(tint, COLORS.gold, 0.24), seed + 406, 0.34, 0.135));
-    tidal.add(this.ringSet(COLORS.gold, 11, 12, 2.35, 0.24, 0.42));
-    this.addStage(tidal, 0.24, 0.78, 0.6, 1.18);
+    const leftTorn = makeSoftGalaxyDisc(25, COLORS.cyan, seed + 404);
+    const rightTorn = makeSoftGalaxyDisc(24, COLORS.gold, seed + 405);
+    leftTorn.position.set(-24, 5, 0);
+    rightTorn.position.set(24, -4, 0);
+    leftTorn.rotation.z = -0.15;
+    rightTorn.rotation.z = 0.2;
+    tidal.add(leftTorn, rightTorn, this.cinematicGlow(tint, 132, 0.24), this.cinematicGlow(COLORS.gold, 92, 0.16), this.cinematicGlow(COLORS.cyan, 80, 0.14));
+    tidal.add(makeSmoothTidalBridge(44, COLORS.cyan, COLORS.gold, seed + 411));
+    tidal.add(makeSpiralArms(18, 360, 72, tint, seed + 406, 0.58));
+    tidal.add(makeParticleCloud(7600, 74, mixHex(tint, COLORS.gold, 0.24), seed + 407, 0.36, 0.12));
+    tidal.add(this.ringSet(COLORS.gold, 14, 12, 2.55, 0.26, 0.44));
+    this.addStage(tidal, 0.24, 0.78, 0.56, 1.2);
 
     const impact = new THREE.Group();
-    impact.add(this.cinematicGlow(COLORS.white, 86, 0.24), this.cinematicGlow(tint, 146, 0.32), this.cinematicGlow(COLORS.gold, 122, 0.18));
-    impact.add(this.luminousCore(5.2, COLORS.white, 0.92));
-    impact.add(makeRadialRays(460, 4, 88, COLORS.gold, seed + 407, 0.62, 0.82));
-    impact.add(makeParticleCloud(6200, 66, mixHex(tint, COLORS.gold, 0.4), seed + 408, 0.42, 0.15));
-    impact.add(this.ringSet(COLORS.white, 9, 8, 3.4, 0.34, 0.36));
-    this.addStage(impact, 0.46, 0.9, 0.14, 1.55);
+    impact.add(this.cinematicGlow(COLORS.white, 112, 0.28), this.cinematicGlow(tint, 178, 0.36), this.cinematicGlow(COLORS.gold, 148, 0.22));
+    impact.add(this.luminousCore(6.8, COLORS.white, 0.94));
+    impact.add(makeRadialRays(680, 4, 104, COLORS.gold, seed + 408, 0.62, 0.88));
+    impact.add(makeRadialRays(360, 5, 96, COLORS.cyan, seed + 409, 0.54, 0.62));
+    impact.add(makeParticleCloud(9200, 82, mixHex(tint, COLORS.gold, 0.4), seed + 410, 0.44, 0.13));
+    impact.add(this.ringSet(COLORS.white, 12, 8, 3.9, 0.36, 0.38));
+    this.addStage(impact, 0.46, 0.9, 0.12, 1.66);
 
     const remnant = new THREE.Group();
-    remnant.add(this.cinematicGlow(mixHex(tint, COLORS.gold, 0.36), 112, 0.23), this.cinematicGlow(COLORS.cyan, 76, 0.12));
-    remnant.add(makeSpiralArms(14, 340, 52, mixHex(tint, COLORS.white, 0.22), seed + 409, 0.62));
-    remnant.add(makeParticleCloud(5200, 60, COLORS.gold, seed + 410, 0.38, 0.13));
-    remnant.add(this.ringSet(mixHex(tint, COLORS.gold, 0.55), 16, 9.5, 2.15, 0.38, 0.38));
-    this.addStage(remnant, 0.68, 1.22, 0.78, 1.06);
+    remnant.add(this.cinematicGlow(mixHex(tint, COLORS.gold, 0.36), 138, 0.26), this.cinematicGlow(COLORS.cyan, 92, 0.14));
+    remnant.add(makeSpiralArms(22, 420, 70, mixHex(tint, COLORS.white, 0.22), seed + 412, 0.66));
+    remnant.add(makeSmoothTidalBridge(52, COLORS.cyan, COLORS.gold, seed + 413));
+    remnant.add(makeParticleCloud(7800, 78, COLORS.gold, seed + 414, 0.38, 0.12));
+    remnant.add(this.ringSet(mixHex(tint, COLORS.gold, 0.55), 20, 9.5, 2.25, 0.4, 0.42));
+    this.addStage(remnant, 0.68, 1.24, 0.76, 1.1);
   }
 
   private buildPlanetCollisionCinematic(event: WorldEvent, seed: number) {
@@ -2587,28 +2716,30 @@ class CinematicDirector {
 
   private buildNeutronCinematic(event: WorldEvent, tint: number, seed: number) {
     const inspiral = new THREE.Group();
-    const a = this.luminousCore(2.9, COLORS.cyan, 0.94);
-    const b = this.luminousCore(2.9, COLORS.softWhite, 0.92);
-    a.position.x = -12;
-    b.position.x = 12;
-    inspiral.add(this.cinematicGlow(COLORS.cyan, 74, 0.18), a, b);
-    inspiral.add(makeLoopField(18, 22, COLORS.cyan, seed + 431, 0.44));
-    inspiral.add(this.ringSet(COLORS.softWhite, 14, 7, 1.6, 0.32, 0.48));
-    this.addStage(inspiral, 0, 0.54, 1.18, 0.42);
+    const starA = this.dancer(this.pulse(this.luminousCore(3.3, COLORS.cyan, 0.96), 0, 0.62, 0.08, 13), 0, 0.58, 25, 4.2, 7.8, -1, 0.46);
+    const starB = this.dancer(this.pulse(this.luminousCore(3.05, COLORS.softWhite, 0.94), 0, 0.58, 0.07, 12), 0, 0.58, 25, 4.2, 7.8, 1, 0.46);
+    inspiral.add(this.cinematicGlow(COLORS.cyan, 86, 0.2), this.cinematicGlow(COLORS.gold, 54, 0.08), starA, starB);
+    inspiral.add(makeLoopField(28, 32, COLORS.cyan, seed + 431, 0.46));
+    inspiral.add(this.ringSet(COLORS.softWhite, 18, 7, 1.8, 0.34, 0.48));
+    inspiral.add(makeSpiralArms(8, 260, 34, COLORS.cyan, seed + 437, 0.42));
+    inspiral.add(makeParticleCloud(2100, 38, tint, seed + 438, 0.32, 0.11));
+    this.addStage(inspiral, 0, 0.64, 1.08, 0.62);
 
     const merger = new THREE.Group();
-    merger.add(this.cinematicGlow(COLORS.white, 92, 0.32), this.cinematicGlow(tint, 124, 0.26), this.luminousCore(5.1, COLORS.white, 0.92));
-    merger.add(makeRadialRays(300, 4, 72, COLORS.cyan, seed + 432, 0.52, 0.76));
-    merger.add(makeRadialRays(210, 4, 68, COLORS.gold, seed + 433, 0.46, 0.58));
-    merger.add(makeParticleCloud(4400, 50, tint, seed + 434, 0.56, 0.15));
-    this.addStage(merger, 0.38, 0.82, 0.25, 1.42);
+    merger.add(this.cinematicGlow(COLORS.white, 118, 0.36), this.cinematicGlow(tint, 148, 0.3), this.cinematicGlow(COLORS.gold, 92, 0.16), this.luminousCore(6.4, COLORS.white, 0.95));
+    merger.add(makeRadialRays(470, 4, 88, COLORS.cyan, seed + 432, 0.52, 0.86));
+    merger.add(makeRadialRays(340, 4, 82, COLORS.gold, seed + 433, 0.46, 0.68));
+    merger.add(makeParticleCloud(6200, 62, tint, seed + 434, 0.58, 0.14));
+    merger.add(this.ringSet(COLORS.white, 16, 8, 2.6, 0.34, 0.5));
+    this.addStage(merger, 0.38, 0.84, 0.18, 1.58);
 
     const remnant = new THREE.Group();
-    remnant.add(this.cinematicGlow(COLORS.purple, 110, 0.22), this.cinematicGlow(COLORS.gold, 78, 0.16));
-    remnant.add(makeSpiralArms(10, 240, 44, COLORS.gold, seed + 435, 0.55));
-    remnant.add(makeParticleCloud(3800, 52, COLORS.purple, seed + 436, 0.54, 0.12));
-    remnant.add(this.ringSet(tint, 14, 10, 1.8, 0.34, 0.48));
-    this.addStage(remnant, 0.66, 1.2, 0.72, 1.06);
+    remnant.add(this.cinematicGlow(COLORS.purple, 132, 0.25), this.cinematicGlow(COLORS.gold, 94, 0.18));
+    remnant.add(makeSpiralArms(15, 340, 56, COLORS.gold, seed + 435, 0.6));
+    remnant.add(makeParticleCloud(5400, 62, COLORS.purple, seed + 436, 0.56, 0.12));
+    remnant.add(makeParticleCloud(2200, 48, COLORS.gold, seed + 439, 0.42, 0.09));
+    remnant.add(this.ringSet(tint, 18, 10, 2.05, 0.36, 0.5));
+    this.addStage(remnant, 0.64, 1.22, 0.68, 1.08);
   }
 
   private buildMagnetarCinematic(event: WorldEvent, tint: number, seed: number) {
@@ -2959,6 +3090,8 @@ class WarpTunnel {
   private streaks: THREE.LineSegments;
   private geometry: THREE.BufferGeometry;
   private rings: THREE.Mesh[] = [];
+  private chargeCore: THREE.Sprite;
+  private companion: THREE.Group;
 
   constructor() {
     const positions = new Float32Array(760 * 6);
@@ -2974,6 +3107,18 @@ class WarpTunnel {
       })
     );
     this.root.add(this.streaks);
+    this.chargeCore = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: createGlowTexture(991, COLORS.cyan),
+        color: COLORS.cyan,
+        transparent: true,
+        opacity: 0.5,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    this.chargeCore.position.z = 16;
+    this.root.add(this.chargeCore);
     for (let i = 0; i < 18; i += 1) {
       const ring = new THREE.Mesh(
         new THREE.TorusGeometry(3 + i * 0.58, 0.03, 8, 96),
@@ -2983,29 +3128,57 @@ class WarpTunnel {
       this.rings.push(ring);
       this.root.add(ring);
     }
+    this.companion = new THREE.Group();
+    const friendHull = new THREE.Mesh(
+      new THREE.ConeGeometry(0.28, 1.25, 5),
+      new THREE.MeshBasicMaterial({ color: COLORS.pink, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending })
+    );
+    friendHull.rotation.x = Math.PI / 2;
+    const friendEngine = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: createGlowTexture(992, COLORS.pink), color: COLORS.pink, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    friendEngine.scale.set(1.8, 1.8, 1);
+    friendEngine.position.z = -0.9;
+    this.companion.add(friendEngine, friendHull);
+    this.root.add(this.companion);
     this.root.visible = false;
   }
 
   update(state: GameState, dt: number) {
     const position = this.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const charging = state.warp.phase === 'charge';
+    const chargeProgress = charging ? smoothstep(state.warp.timer / 2) : 1;
+    const jumpProgress = state.warp.phase === 'jump' ? smoothstep(state.warp.timer / 3.2) : 0;
     const t = state.warp.timer;
     for (let i = 0; i < 760; i += 1) {
       const a = i * 12.9898;
       const angle = (Math.sin(a) * 43758.5453) % (Math.PI * 2);
-      const speed = 24 + (i % 41);
-      const z1 = ((i * 5.1 + t * speed * 44) % 190) + 8;
-      const z2 = z1 + 10 + (i % 11);
-      const r = 1.5 + (i % 61) * 0.16 + smoothstep(state.warp.timer / 3.2) * 8.5;
+      const speed = charging ? 5 + (i % 19) : 30 + (i % 51);
+      const z1 = ((i * 5.1 + t * speed * (charging ? 12 : 55)) % 215) + 8;
+      const z2 = z1 + (charging ? 4 : 12) + (i % 13);
+      const baseR = charging ? 8.5 * (1 - chargeProgress) + 1.2 : 1.5 + jumpProgress * 9.5;
+      const r = baseR + (i % 61) * (charging ? 0.08 : 0.17);
       const x = Math.cos(angle) * r;
       const y = Math.sin(angle) * r * 0.62;
       position.setXYZ(i * 2, x, y, z1);
-      position.setXYZ(i * 2 + 1, x * 1.48, y * 1.48, z2);
+      position.setXYZ(i * 2 + 1, x * (charging ? 0.35 + chargeProgress : 1.58), y * (charging ? 0.35 + chargeProgress : 1.58), z2);
     }
     position.needsUpdate = true;
-    this.root.rotation.z += dt * 0.38;
+    this.root.rotation.z += dt * (charging ? 0.55 + chargeProgress * 1.9 : 0.8 + jumpProgress * 1.4);
+    this.chargeCore.visible = true;
+    this.chargeCore.position.z = charging ? 12 : 20;
+    this.chargeCore.scale.setScalar(charging ? 5 + chargeProgress * 18 : 14 + Math.sin(t * 14) * 2);
+    (this.chargeCore.material as THREE.SpriteMaterial).opacity = charging ? 0.24 + chargeProgress * 0.52 : 0.34;
     this.rings.forEach((ring, i) => {
-      ring.rotation.z -= dt * (0.6 + i * 0.02);
-      ring.scale.setScalar(1 + Math.sin(t * 4 + i) * 0.08);
+      ring.rotation.z -= dt * (charging ? 0.8 + i * 0.04 : 1.15 + i * 0.03);
+      ring.position.z = charging ? 12 + i * (2.8 + chargeProgress * 1.8) : 8 + i * 7;
+      ring.scale.setScalar((charging ? 0.42 + chargeProgress * 0.9 : 1.05 + jumpProgress * 0.28) + Math.sin(t * 4 + i) * 0.08);
     });
+    this.companion.visible = state.warp.groupWarp;
+    if (state.warp.groupWarp) {
+      this.companion.position.set(-1.65 + Math.sin(t * 4) * 0.18, -0.85 + Math.cos(t * 3.3) * 0.12, charging ? 10 : 20 + jumpProgress * 18);
+      this.companion.rotation.z = -0.18 + Math.sin(t * 5) * 0.08;
+      this.companion.rotation.y = Math.sin(t * 3) * 0.22;
+    }
   }
 }

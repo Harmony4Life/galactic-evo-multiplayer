@@ -80,6 +80,36 @@ class GalacticEvoRoom extends Room {
         startedAt: Date.now()
       });
     });
+
+    const peerRelay = (type, client, data) => {
+      if (!data) return;
+      this.broadcast(type, {
+        originId: client.sessionId,
+        targetId: String(data.targetId || ''),
+        name: cleanName(data.name),
+        color: Number(data.color) || colorFromSession(client.sessionId),
+        x: Number(data.x) || 0,
+        y: Number(data.y) || 0,
+        z: Number(data.z) || 0,
+        destination: data.destination && typeof data.destination === 'object'
+          ? {
+              x: Number(data.destination.x) || 0,
+              y: Number(data.destination.y) || 0,
+              z: Number(data.destination.z) || 0,
+              name: String(data.destination.name || 'Squad destination').slice(0, 80),
+              color: Number(data.destination.color) || 0x50ffff
+            }
+          : undefined,
+        sentAt: Date.now()
+      });
+    };
+
+    this.onMessage('warp:request', (client, data) => peerRelay('warp:request', client, data));
+    this.onMessage('warp:accept', (client, data) => peerRelay('warp:accept', client, data));
+    this.onMessage('squad:invite', (client, data) => peerRelay('squad:invite', client, data));
+    this.onMessage('squad:accept', (client, data) => peerRelay('squad:accept', client, data));
+    this.onMessage('squad:leave', (client, data) => peerRelay('squad:leave', client, data));
+    this.onMessage('group:warp', (client, data) => peerRelay('group:warp', client, data));
   }
 
   onJoin(client, options) {
