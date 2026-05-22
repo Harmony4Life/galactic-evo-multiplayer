@@ -256,8 +256,37 @@ export class Hud {
     const width = this.fullMap.width;
     const height = this.fullMap.height;
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#050716';
+    const bg = ctx.createRadialGradient(width * 0.54, height * 0.48, 0, width * 0.54, height * 0.48, Math.max(width, height) * 0.72);
+    bg.addColorStop(0, '#07112a');
+    bg.addColorStop(0.42, '#050716');
+    bg.addColorStop(1, '#01030c');
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    for (let arm = 0; arm < 5; arm += 1) {
+      ctx.beginPath();
+      for (let i = 0; i < 180; i += 1) {
+        const u = i / 179;
+        const a = arm * ((Math.PI * 2) / 5) + u * 3.8;
+        const r = 55 + u * Math.min(width, height) * 0.58;
+        const x = width / 2 + Math.cos(a) * r * 1.05;
+        const y = height / 2 + Math.sin(a) * r * 0.62;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = arm % 2 ? 'rgba(255, 205, 90, 0.22)' : 'rgba(80, 255, 255, 0.20)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 220; i += 1) {
+      const x = (Math.sin(i * 91.7) * 0.5 + 0.5) * width;
+      const y = 98 + (Math.sin(i * 47.3 + 2.1) * 0.5 + 0.5) * (height - 125);
+      ctx.fillStyle = i % 5 === 0 ? 'rgba(255, 205, 90, 0.36)' : 'rgba(210, 220, 240, 0.24)';
+      ctx.fillRect(x, y, i % 7 === 0 ? 2 : 1, i % 7 === 0 ? 2 : 1);
+    }
+    ctx.restore();
     ctx.strokeStyle = '#50ffff';
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, width - 2, height - 2);
@@ -288,15 +317,46 @@ export class Hud {
       const p = this.state.universeToMap(target.position, width, height);
       if (p.x < 18 || p.x > width - 18 || p.y < 100 || p.y > height - 18) continue;
       const hiddenLove = isEvent(target) && target.name === 'My Love For You' && !target.discovered;
-      ctx.strokeStyle = hex(hiddenLove ? COLORS.pink : target.color);
+      const accent = hiddenLove ? COLORS.pink : target.color;
+      ctx.strokeStyle = hex(accent);
       ctx.fillStyle = ctx.strokeStyle;
-      const radius = isEvent(target) ? 5 : target.kind === 'Star System' ? 3 : 8;
+      ctx.shadowColor = hex(accent);
+      ctx.shadowBlur = isEvent(target) ? 12 : target.kind === 'Star System' ? 7 : 18;
+      const radius = isEvent(target) ? 5.5 : target.kind === 'Star System' ? 3.5 : 9;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-      ctx.fill();
+      if (isEvent(target)) {
+        ctx.moveTo(p.x, p.y - radius);
+        ctx.lineTo(p.x + radius, p.y);
+        ctx.lineTo(p.x, p.y + radius);
+        ctx.lineTo(p.x - radius, p.y);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      if (!isEvent(target) && (target.kind === 'Galaxy' || target.kind === 'Galaxy Pair')) {
+        for (let arm = 0; arm < 3; arm += 1) {
+          ctx.beginPath();
+          for (let i = 0; i < 26; i += 1) {
+            const u = i / 25;
+            const a = arm * ((Math.PI * 2) / 3) + u * 2.8;
+            const rr = radius + u * 18;
+            const x = p.x + Math.cos(a) * rr;
+            const y = p.y + Math.sin(a) * rr * 0.48;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = hex(accent);
+          ctx.globalAlpha = 0.72;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
       if (isEvent(target) || target.kind === 'Galaxy' || target.kind === 'Galaxy Pair') {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, radius + 7, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, radius + (isEvent(target) ? 8 : 12), 0, Math.PI * 2);
         ctx.stroke();
       }
       if (target === this.state.trackedTarget) {
@@ -304,6 +364,11 @@ export class Hud {
         ctx.beginPath();
         ctx.arc(p.x, p.y, radius + 13, 0, Math.PI * 2);
         ctx.stroke();
+      }
+      if (!isEvent(target) && (target.kind === 'Galaxy' || target.name === 'Solar System')) {
+        ctx.font = '11px Inter, Arial';
+        ctx.fillStyle = hex(accent);
+        ctx.fillText(target.name, p.x + 13, p.y - 8);
       }
     }
 

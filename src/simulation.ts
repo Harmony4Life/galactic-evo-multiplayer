@@ -5,7 +5,9 @@ export type TrackerMode = 'nearest' | 'systems';
 export const WORLD_SIZE = 1800000;
 export const RENDER_DISTANCE = 74000;
 export const WARP_DURATION = 3.2;
-export const WARP_CHARGE_DURATION = 2.0;
+export const WARP_ALIGN_DURATION = 1.15;
+export const WARP_CHARGE_DURATION = 3.0;
+export const WARP_EXIT_DURATION = 1.15;
 export const SPECIAL_PLANET_DURATION = 12;
 
 export const COLORS = {
@@ -130,7 +132,7 @@ export interface MultiplayerStatus {
   message: string;
 }
 
-export type WarpPhase = 'idle' | 'charge' | 'jump';
+export type WarpPhase = 'idle' | 'align' | 'charge' | 'jump' | 'exit';
 
 export interface WarpPayload {
   x: number;
@@ -626,9 +628,9 @@ export class GameState {
     const nx = (pos.x - centerX) / halfX;
     const nz = (pos.z - centerZ) / halfZ;
     const r = Math.hypot(nx, nz);
-    const visualR = r > 0 ? Math.pow(Math.min(1.22, r), 0.72) : 0;
+    const visualR = r > 0 ? Math.pow(Math.min(1.24, r), 0.54) : 0;
     const stretch = r > 0 ? visualR / r : 1;
-    const scale = Math.min(width, height) * 0.45;
+    const scale = Math.min(width, height) * 0.52;
     return {
       x: width / 2 + nx * stretch * scale + (includePan ? this.mapPan.x : 0),
       y: height / 2 + nz * stretch * scale + (includePan ? this.mapPan.y : 0)
@@ -671,7 +673,7 @@ export class GameState {
   triggerNearestEvent() {
     const [event] = this.events
       .slice()
-      .filter((item) => item.phase !== 'aftermath')
+      .filter((item) => item.phase !== 'aftermath' && item.kind !== 'Solar System')
       .sort((a, b) => distance(this.player.position, a.position) - distance(this.player.position, b.position));
     if (!event) return;
     const d = distance(this.player.position, event.position);
@@ -820,7 +822,7 @@ export class GameState {
   }) {
     const aim = angleToPoint(this.player.position, input.focus);
     this.warp.active = true;
-    this.warp.phase = 'charge';
+    this.warp.phase = 'align';
     this.warp.timer = 0;
     this.warp.destination = input.destination;
     this.warp.destinationName = input.name;
@@ -849,6 +851,13 @@ export class GameState {
   }
 
   startEvent(event: WorldEvent, options: { fromNetwork?: boolean; timer?: number } = {}) {
+    if (event.kind === 'Solar System') {
+      this.trackedTarget = event;
+      this.selectedTarget = event;
+      event.discovered = true;
+      this.setMessage('Solar System is a destination entry for now. Its dedicated world event is coming soon.', 4);
+      return;
+    }
     this.specialScene.active = false;
     this.specialScene.target = null;
     if (event.phase === 'dormant') {
@@ -1135,10 +1144,22 @@ export class GameState {
   private updateWarp(dt: number) {
     if (!this.warp.active) return;
     this.warp.timer += dt;
-    if (this.warp.phase === 'charge') {
-      const t = smoothstep(this.warp.timer / WARP_CHARGE_DURATION);
+    if (this.warp.phase === 'align') {
+      const t = smoothstep(this.warp.timer / WARP_ALIGN_DURATION);
       this.player.yaw = lerpAngle(this.warp.alignStartYaw, this.warp.alignEndYaw, t);
       this.player.pitch = lerpAngle(this.warp.alignStartPitch, this.warp.alignEndPitch, t);
+      if (this.warp.timer >= WARP_ALIGN_DURATION) {
+        this.warp.phase = 'charge';
+        this.warp.timer = 0;
+        this.player.yaw = this.warp.alignEndYaw;
+        this.player.pitch = this.warp.alignEndPitch;
+      }
+      return;
+    }
+
+    if (this.warp.phase === 'charge') {
+      this.player.yaw = this.warp.alignEndYaw;
+      this.player.pitch = this.warp.alignEndPitch;
       if (this.warp.timer >= WARP_CHARGE_DURATION) {
         this.warp.phase = 'jump';
         this.warp.timer = 0;
@@ -1147,14 +1168,22 @@ export class GameState {
       return;
     }
 
-    const t = smoothstep(this.warp.timer / WARP_DURATION);
-    this.player.position = lerpVec(this.warp.start, this.warp.end, t);
-    if (this.warp.timer >= WARP_DURATION) {
+    if (this.warp.phase === 'exit') {
+      if (this.warp.timer < WARP_EXIT_DURATION) return;
       this.warp.active = false;
       this.warp.phase = 'idle';
       this.warp.groupWarp = false;
       this.warp.companionId = null;
       this.setMessage(`Warp complete. Arrived near ${this.warp.destinationName}.`, 4.5);
+      return;
+    }
+
+    const t = smoothstep(this.warp.timer / WARP_DURATION);
+    this.player.position = lerpVec(this.warp.start, this.warp.end, t);
+    if (this.warp.timer >= WARP_DURATION) {
+      this.player.position = copyVec(this.warp.end);
+      this.warp.phase = 'exit';
+      this.warp.timer = 0;
     }
   }
 
