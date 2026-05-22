@@ -1308,9 +1308,7 @@ export class UniverseRenderer {
     const floating = !state.warp.active;
     const alignSpin = phase === 'align' ? (1 - align) * Math.PI * 4.4 : 0;
     const alignBank = phase === 'align' ? Math.sin(align * Math.PI) * 0.76 : 0;
-    const orbitPitch = THREE.MathUtils.clamp(state.player.cameraPitchOffset, -0.92, 0.92);
-    const orbitYaw = state.player.cameraYawOffset;
-    const topView = 1.08 + Math.max(0, orbitPitch) * 0.18;
+    const topView = 1.08;
 
     this.localShip.position.set(
       Math.sin(elapsed * 1.35) * (floating ? 0.028 : 0.01),
@@ -1318,8 +1316,8 @@ export class UniverseRenderer {
       -5.9 - topView * 0.38 - charge * 0.46 - jump * 1.12 + exit * 0.94
     );
     this.localShip.rotation.set(
-      -Math.PI / 2 - orbitPitch * 0.32 - charge * 0.08 + exit * 0.06 + alignBank * 0.08,
-      -orbitYaw * 0.82 + Math.sin(elapsed * 1.2) * 0.018 * (floating ? 1 : 0.25) + alignBank * 0.26,
+      -Math.PI / 2 - charge * 0.08 + exit * 0.06 + alignBank * 0.08,
+      Math.sin(elapsed * 1.2) * 0.018 * (floating ? 1 : 0.25) + alignBank * 0.26,
       Math.sin(elapsed * 2.1) * 0.035 * (floating ? 1 : 0.18) + alignSpin
     );
 
@@ -1372,16 +1370,16 @@ export class UniverseRenderer {
     const top = 0.08;
     const bottom = -0.08;
     const verts = [
-      0, top, -1.95,
-      -1.62, top, 0.18,
-      -0.52, top, 0.92,
-      0.52, top, 0.92,
-      1.62, top, 0.18,
-      0, bottom, -1.72,
-      -1.38, bottom, 0.14,
-      -0.44, bottom, 0.78,
-      0.44, bottom, 0.78,
-      1.38, bottom, 0.14
+      0, top, 1.95,
+      -1.62, top, -0.18,
+      -0.52, top, -0.92,
+      0.52, top, -0.92,
+      1.62, top, -0.18,
+      0, bottom, 1.72,
+      -1.38, bottom, -0.14,
+      -0.44, bottom, -0.78,
+      0.44, bottom, -0.78,
+      1.38, bottom, -0.14
     ];
     const indices = [
       0, 1, 2, 0, 2, 3, 0, 3, 4,
@@ -1405,14 +1403,14 @@ export class UniverseRenderer {
       new THREE.BoxGeometry(0.74, 0.46, 1.05, 1, 1, 1),
       underMaterial
     );
-    body.position.set(0, 0.34, -0.18);
+    body.position.set(0, 0.34, 0.18);
     body.rotation.x = -0.08;
 
     const tailFin = new THREE.Mesh(
       new THREE.BoxGeometry(0.46, 0.72, 0.34, 1, 1, 1),
       underMaterial
     );
-    tailFin.position.set(0, 0.58, 0.46);
+    tailFin.position.set(0, 0.58, -0.46);
 
     const bevel = new THREE.Mesh(
       new THREE.BoxGeometry(1.1, 0.08, 0.28),
@@ -1424,7 +1422,7 @@ export class UniverseRenderer {
         emissiveIntensity: 0.18
       })
     );
-    bevel.position.set(0, 0.12, 0.76);
+    bevel.position.set(0, 0.12, -0.76);
 
     const canopy = new THREE.Mesh(
       new THREE.SphereGeometry(0.26, 32, 16),
@@ -1439,7 +1437,7 @@ export class UniverseRenderer {
       })
     );
     canopy.scale.set(1.2, 0.34, 0.72);
-    canopy.position.set(0, 0.66, -0.76);
+    canopy.position.set(0, 0.66, 0.76);
 
     const halo = this.torus(1.84, 0.036, COLORS.white, 0.9);
     halo.rotation.x = Math.PI / 2;
@@ -1453,14 +1451,14 @@ export class UniverseRenderer {
     haloTint.userData.spinZ = -0.05;
 
     const engine = this.spriteGlow(tint, 1.35, 0.52);
-    engine.position.set(0, 0.12, 1.1);
+    engine.position.set(0, 0.12, -1.1);
     group.userData.engine = engine;
     const engineLeft = this.spriteGlow(tint, 0.78, 0.42);
-    engineLeft.position.set(-0.45, 0.08, 0.95);
+    engineLeft.position.set(-0.45, 0.08, -0.95);
     const engineRight = this.spriteGlow(tint, 0.78, 0.42);
-    engineRight.position.set(0.45, 0.08, 0.95);
+    engineRight.position.set(0.45, 0.08, -0.95);
     const aura = this.spriteGlow(tint, 2.9, 0.08);
-    aura.position.set(0, 0.08, 0.9);
+    aura.position.set(0, 0.08, -0.9);
     group.userData.aura = aura;
     group.add(aura, halo, haloTint, engine, engineLeft, engineRight, hull, body, tailFin, bevel, canopy);
     group.scale.setScalar(0.82);
