@@ -16,6 +16,11 @@ import {
   SpaceObject,
   subVec,
   Trackable,
+  Vec3,
+  WARP_ALIGN_DURATION,
+  WARP_CHARGE_DURATION,
+  WARP_DURATION,
+  WARP_EXIT_DURATION,
   WorldEvent
 } from './simulation';
 
@@ -1077,6 +1082,7 @@ export class UniverseRenderer {
   private remoteRoot = new THREE.Group();
   private entityGroups = new Map<string, THREE.Group>();
   private remoteGroups = new Map<string, THREE.Group>();
+  private warpEchoes: Array<{ root: THREE.Group; world: Vec3; age: number; ttl: number }> = [];
   private version = -1;
   private backdrop = makeNebulaBackdrop();
   private starLayers: THREE.Points[] = [];
@@ -1153,7 +1159,8 @@ export class UniverseRenderer {
       return;
     }
 
-    if (state.warp.active) {
+    const inWarpTunnel = state.warp.active && (state.warp.phase === 'jump' || state.warp.phase === 'exit');
+    if (inWarpTunnel) {
       this.universeRoot.visible = false;
       this.remoteRoot.visible = false;
       this.starLayers.forEach((layer) => (layer.visible = false));
@@ -1235,6 +1242,7 @@ export class UniverseRenderer {
     }
 
     this.syncRemotePlayers(state, elapsed, dt);
+    this.updateWarpEchoes(state, dt);
 
     this.composer.render();
   }
@@ -1264,21 +1272,21 @@ export class UniverseRenderer {
     if (!this.localShip.visible) return;
 
     const phase = state.warp.phase;
-    const align = phase === 'align' ? smoothstep(state.warp.timer / 1.15) : 0;
-    const charge = phase === 'charge' ? smoothstep(state.warp.timer / 3.0) : 0;
-    const jump = phase === 'jump' ? smoothstep(state.warp.timer / 3.2) : 0;
-    const exit = phase === 'exit' ? smoothstep(state.warp.timer / 1.15) : 0;
+    const align = phase === 'align' ? smoothstep(state.warp.timer / WARP_ALIGN_DURATION) : 0;
+    const charge = phase === 'charge' ? smoothstep(state.warp.timer / WARP_CHARGE_DURATION) : 0;
+    const jump = phase === 'jump' ? smoothstep(state.warp.timer / WARP_DURATION) : 0;
+    const exit = phase === 'exit' ? smoothstep(state.warp.timer / WARP_EXIT_DURATION) : 0;
     const floating = !state.warp.active;
     const alignSpin = phase === 'align' ? (1 - align) * Math.PI * 4.4 : 0;
     const alignBank = phase === 'align' ? Math.sin(align * Math.PI) * 0.76 : 0;
 
     this.localShip.position.set(
       Math.sin(elapsed * 1.35) * (floating ? 0.035 : 0.012),
-      -0.86 + Math.sin(elapsed * 1.9) * (floating ? 0.038 : 0.014) + exit * 0.16,
-      -4.02 - charge * 0.52 - jump * 1.25 + exit * 0.82
+      -0.64 + Math.sin(elapsed * 1.9) * (floating ? 0.034 : 0.012) + exit * 0.12,
+      -4.72 - charge * 0.46 - jump * 1.12 + exit * 0.72
     );
     this.localShip.rotation.set(
-      -0.36 - charge * 0.1 + exit * 0.08 + alignBank * 0.08,
+      -0.58 - charge * 0.08 + exit * 0.06 + alignBank * 0.08,
       Math.sin(elapsed * 1.2) * 0.025 * (floating ? 1 : 0.25) + alignBank * 0.26,
       Math.sin(elapsed * 2.1) * 0.035 * (floating ? 1 : 0.18) + alignSpin
     );
@@ -1315,7 +1323,7 @@ export class UniverseRenderer {
   private makeCameraShip(tint: number) {
     const group = new THREE.Group();
     const hull = new THREE.Mesh(
-      new THREE.ConeGeometry(0.34, 1.85, 6, 1),
+      new THREE.ConeGeometry(0.32, 0.96, 6, 1),
       new THREE.MeshStandardMaterial({
         color: mixHex(tint, COLORS.white, 0.42),
         roughness: 0.22,
@@ -1325,6 +1333,7 @@ export class UniverseRenderer {
       })
     );
     hull.rotation.x = -Math.PI / 2;
+    hull.position.z = -1.08;
 
     const body = new THREE.Mesh(
       new THREE.SphereGeometry(0.34, 28, 16),
@@ -1336,8 +1345,8 @@ export class UniverseRenderer {
         emissiveIntensity: 0.12
       })
     );
-    body.scale.set(0.88, 0.42, 1.55);
-    body.position.z = -0.38;
+    body.scale.set(0.78, 0.34, 1.52);
+    body.position.z = -0.08;
 
     const wingGeometry = new THREE.BufferGeometry();
     wingGeometry.setAttribute(
@@ -1345,11 +1354,11 @@ export class UniverseRenderer {
       new THREE.Float32BufferAttribute(
         [
           -0.12, -0.02, -0.35,
-          -1.05, -0.08, -1.18,
-          -0.28, 0.02, 0.22,
+          -1.2, -0.08, 0.05,
+          -0.28, 0.02, 0.62,
           0.12, -0.02, -0.35,
-          1.05, -0.08, -1.18,
-          0.28, 0.02, 0.22
+          1.2, -0.08, 0.05,
+          0.28, 0.02, 0.62
         ],
         3
       )
@@ -1380,17 +1389,83 @@ export class UniverseRenderer {
       })
     );
     canopy.scale.set(0.74, 0.32, 1);
-    canopy.position.set(0, 0.13, -0.02);
+    canopy.position.set(0, 0.18, -0.44);
 
     const engine = this.spriteGlow(tint, 1.35, 0.52);
-    engine.position.z = -1.35;
+    engine.position.z = 1.05;
     group.userData.engine = engine;
     const aura = this.spriteGlow(tint, 2.4, 0.08);
-    aura.position.z = -1.2;
+    aura.position.z = 0.9;
     group.userData.aura = aura;
     group.add(aura, engine, hull, body, wings, canopy);
     group.scale.setScalar(0.86);
     return group;
+  }
+
+  private makeWarpEcho(direction: Vec3, tint: number, seed: number) {
+    const group = new THREE.Group();
+    const rand = seeded(seed);
+    const dir = new THREE.Vector3(direction.x, direction.y, direction.z);
+    if (dir.lengthSq() < 0.0001) dir.set(0, 0, 1);
+    dir.normalize();
+    const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+    if (side.lengthSq() < 0.001) side.set(1, 0, 0);
+    side.normalize();
+    const up = new THREE.Vector3().crossVectors(side, dir).normalize();
+    const positions: number[] = [];
+    for (let i = 0; i < 78; i += 1) {
+      const spread = 0.35 + rand() * 4.6;
+      const theta = rand() * Math.PI * 2;
+      const offset = side.clone().multiplyScalar(Math.cos(theta) * spread).add(up.clone().multiplyScalar(Math.sin(theta) * spread * 0.55));
+      const len = 3.5 + rand() * 18;
+      const start = offset.clone().add(dir.clone().multiplyScalar(-len * (0.18 + rand() * 0.22)));
+      const end = offset.clone().add(dir.clone().multiplyScalar(len));
+      positions.push(start.x, start.y, start.z, end.x, end.y, end.z);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    group.add(
+      new THREE.LineSegments(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: mixHex(tint, COLORS.white, 0.72),
+          transparent: true,
+          opacity: 0.72,
+          blending: THREE.AdditiveBlending
+        })
+      )
+    );
+    group.add(this.spriteGlow(mixHex(tint, COLORS.white, 0.55), 5.4, 0.18));
+    return group;
+  }
+
+  private spawnWarpEcho(world: Vec3, direction: Vec3, tint: number) {
+    const seed = Math.floor(Math.abs(world.x * 0.11 + world.y * 0.17 + world.z * 0.23)) % 1000000;
+    const root = this.makeWarpEcho(direction, tint, seed);
+    root.userData.baseScale = root.scale.clone();
+    this.remoteRoot.add(root);
+    this.warpEchoes.push({ root, world: { ...world }, age: 0, ttl: 1.55 });
+  }
+
+  private updateWarpEchoes(state: GameState, dt: number) {
+    for (let i = this.warpEchoes.length - 1; i >= 0; i -= 1) {
+      const echo = this.warpEchoes[i];
+      echo.age += dt;
+      const t = echo.age / echo.ttl;
+      if (t >= 1) {
+        echo.root.removeFromParent();
+        this.warpEchoes.splice(i, 1);
+        continue;
+      }
+      const rel = subVec(echo.world, state.player.position);
+      echo.root.position.set(rel.x * RENDER_SCALE, rel.y * RENDER_SCALE, rel.z * RENDER_SCALE);
+      const alpha = 1 - smoothstep(t);
+      echo.root.scale.setScalar(0.85 + t * 1.65);
+      echo.root.traverse((child) => {
+        const material = (child as THREE.LineSegments | THREE.Sprite).material as THREE.Material & { opacity?: number };
+        if (material && typeof material.opacity === 'number') material.opacity = alpha * (child instanceof THREE.Sprite ? 0.18 : 0.72);
+      });
+    }
   }
 
   private rebuild(state: GameState) {
@@ -1425,6 +1500,17 @@ export class UniverseRenderer {
         this.remoteGroups.set(pilot.id, group);
         this.remoteRoot.add(group);
       }
+
+      const lastWorld = group.userData.lastWorld as Vec3 | undefined;
+      if (lastWorld) {
+        const delta = subVec(pilot.position, lastWorld);
+        const jumpDistance = distance(pilot.position, lastWorld);
+        if (jumpDistance > 2600) {
+          this.spawnWarpEcho(lastWorld, delta, pilot.color || COLORS.cyan);
+          this.spawnWarpEcho(pilot.position, delta, pilot.color || COLORS.cyan);
+        }
+      }
+      group.userData.lastWorld = { ...pilot.position };
 
       const rel = subVec(pilot.position, state.player.position);
       const d = distance(state.player.position, pilot.position);
@@ -2042,7 +2128,17 @@ export class UniverseRenderer {
       return group;
     }
 
-    if (kind === 'Neutron Star Merger' || kind === 'Kilonova') {
+    if (kind === 'Kilonova') {
+      const cocoon = new THREE.Group();
+      cocoon.rotation.x = Math.PI / 2;
+      cocoon.add(makeVolumetricGalaxyDisc(size * 2.2, mixHex(COLORS.purple, COLORS.gold, 0.36), seed + 12, 9, 4600, 0.24));
+      cocoon.add(makeParticleCloud(2400, size * 4.6, COLORS.gold, seed + 13, 0.36, 0.07));
+      cocoon.add(makeDiamondShardField(110, size * 3.2, COLORS.gold, seed + 14, size * 0.025));
+      group.add(this.spriteGlow(COLORS.purple, size * 8.8, 0.24), this.spriteGlow(COLORS.gold, size * 8.2, 0.18), cocoon);
+      return group;
+    }
+
+    if (kind === 'Neutron Star Merger') {
       const plane = new THREE.Group();
       plane.rotation.x = Math.PI / 2;
       plane.add(makeVolumetricGalaxyDisc(size * 2.1, mixHex(tint, COLORS.purple, 0.5), seed + 12, 6, 4200, 0.36));
@@ -2246,7 +2342,16 @@ export class UniverseRenderer {
       return group;
     }
 
-    if (kind === 'Neutron Star Merger' || kind === 'Kilonova') {
+    if (kind === 'Kilonova') {
+      const core = new THREE.Mesh(new THREE.SphereGeometry(size * 0.34, 36, 18), new THREE.MeshBasicMaterial({ color: COLORS.white, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }));
+      group.add(this.spriteGlow(COLORS.purple, size * 7.0, 0.26), this.spriteGlow(COLORS.gold, size * 6.2, 0.16), core);
+      group.add(makeDiamondShardField(74, size * 2.4, COLORS.gold, seed + 31, size * 0.028));
+      group.add(makeParticleCloud(1400, size * 4.2, mixHex(COLORS.purple, COLORS.gold, 0.32), seed + 32, 0.46, 0.12));
+      group.add(this.beam(size * 4.8, size * 0.055, COLORS.purple, 'y', 0.22));
+      return group;
+    }
+
+    if (kind === 'Neutron Star Merger') {
       const a = new THREE.Mesh(new THREE.SphereGeometry(size * 0.25, 32, 16), new THREE.MeshBasicMaterial({ color: COLORS.cyan, blending: THREE.AdditiveBlending }));
       const b = new THREE.Mesh(new THREE.SphereGeometry(size * 0.25, 32, 16), new THREE.MeshBasicMaterial({ color: COLORS.gold, blending: THREE.AdditiveBlending }));
       a.position.x = -size * 0.62;
@@ -3068,6 +3173,41 @@ class CinematicDirector {
     this.addStage(remnant, 0.64, 1.22, 0.68, 1.08);
   }
 
+  private buildKilonovaCinematic(event: WorldEvent, tint: number, seed: number) {
+    const preflash = new THREE.Group();
+    const primary = this.luminousCore(3.4, COLORS.white, 0.9);
+    const secondary = this.luminousCore(2.8, COLORS.gold, 0.84);
+    primary.position.set(-5.2, 0.6, 0);
+    secondary.position.set(5.2, -0.4, 0);
+    preflash.add(this.cinematicGlow(COLORS.purple, 84, 0.18), this.cinematicGlow(COLORS.gold, 64, 0.14), primary, secondary);
+    preflash.add(makeParticleCloud(2200, 38, mixHex(COLORS.purple, COLORS.gold, 0.28), seed + 601, 0.22, 0.07));
+    preflash.add(makeDiamondShardField(95, 24, COLORS.gold, seed + 602, 0.11));
+    this.addStage(preflash, 0, 0.42, 0.92, 1.08);
+
+    const flash = new THREE.Group();
+    flash.add(this.cinematicGlow(COLORS.white, 114, 0.38), this.cinematicGlow(COLORS.purple, 156, 0.32), this.cinematicGlow(COLORS.gold, 130, 0.28));
+    flash.add(this.luminousCore(6.4, COLORS.white, 0.96));
+    const polarA = this.cinematicBeam(118, 0.44, COLORS.purple, 0.28);
+    polarA.rotation.z = Math.PI / 2;
+    const polarB = this.cinematicBeam(108, 0.25, COLORS.gold, 0.24);
+    polarB.rotation.z = Math.PI / 2;
+    polarB.rotation.y = 0.18;
+    flash.add(polarA, polarB);
+    flash.add(makeRadialRays(280, 5, 78, COLORS.gold, seed + 603, 0.46, 0.62));
+    flash.add(makeParticleCloud(5200, 58, mixHex(COLORS.purple, COLORS.gold, 0.38), seed + 604, 0.5, 0.12));
+    this.addStage(flash, 0.25, 0.82, 0.18, 1.52);
+
+    const cocoon = new THREE.Group();
+    cocoon.add(this.cinematicGlow(COLORS.purple, 142, 0.26), this.cinematicGlow(COLORS.gold, 126, 0.2));
+    const ejecta = makeVolumetricGalaxyDisc(50, mixHex(COLORS.purple, COLORS.gold, 0.32), seed + 605, 10, 8600, 0.22);
+    ejecta.scale.set(1.55, 0.72, 0.56);
+    cocoon.add(ejecta);
+    cocoon.add(makeParticleCloud(6400, 68, COLORS.purple, seed + 606, 0.52, 0.1));
+    cocoon.add(makeParticleCloud(4200, 58, COLORS.gold, seed + 607, 0.42, 0.08));
+    cocoon.add(makeDiamondShardField(220, 54, COLORS.gold, seed + 608, 0.12));
+    this.addStage(cocoon, 0.58, 1.24, 0.62, 1.12);
+  }
+
   private buildMagnetarCinematic(event: WorldEvent, tint: number, seed: number) {
     const calm = new THREE.Group();
     calm.add(this.cinematicGlow(tint, 86, 0.22), this.luminousCore(4.5, COLORS.white, 0.9));
@@ -3188,6 +3328,10 @@ class CinematicDirector {
     if (kind === 'Galaxy Collision' || kind === 'Neutron Star Merger' || kind === 'Kilonova') {
       if (kind === 'Galaxy Collision') {
         this.buildGalaxyCollisionCinematic(event, tint, seed);
+        return;
+      }
+      if (kind === 'Kilonova') {
+        this.buildKilonovaCinematic(event, tint, seed);
         return;
       }
       this.buildNeutronCinematic(event, tint, seed);
@@ -3477,16 +3621,16 @@ class WarpTunnel {
     const jumping = state.warp.phase === 'jump';
     const exiting = state.warp.phase === 'exit';
     const chargeProgress = aligning
-      ? smoothstep(state.warp.timer / 1.15) * 0.34
+      ? smoothstep(state.warp.timer / WARP_ALIGN_DURATION) * 0.34
       : charging
-        ? smoothstep(state.warp.timer / 3)
+        ? smoothstep(state.warp.timer / WARP_CHARGE_DURATION)
         : jumping
           ? 1
           : exiting
-            ? 1 - smoothstep(state.warp.timer / 1.15) * 0.55
+            ? 1 - smoothstep(state.warp.timer / WARP_EXIT_DURATION) * 0.55
             : 1;
-    const jumpProgress = jumping ? smoothstep(state.warp.timer / 3.2) : exiting ? 1 : 0;
-    const exitProgress = exiting ? smoothstep(state.warp.timer / 1.15) : 0;
+    const jumpProgress = jumping ? smoothstep(state.warp.timer / WARP_DURATION) : exiting ? 1 : 0;
+    const exitProgress = exiting ? smoothstep(state.warp.timer / WARP_EXIT_DURATION) : 0;
     const t = state.warp.timer;
     for (let i = 0; i < 760; i += 1) {
       const a = i * 12.9898;
