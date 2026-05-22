@@ -137,6 +137,7 @@ export interface CutsceneState {
   event: WorldEvent | null;
   timer: number;
   duration: number;
+  sequence: number;
 }
 
 export interface SpecialSceneState {
@@ -144,6 +145,7 @@ export interface SpecialSceneState {
   target: Trackable | null;
   timer: number;
   duration: number;
+  sequence: number;
 }
 
 class RNG {
@@ -415,14 +417,16 @@ export class GameState {
     active: false,
     event: null,
     timer: 0,
-    duration: 0
+    duration: 0,
+    sequence: 0
   };
 
   specialScene: SpecialSceneState = {
     active: false,
     target: null,
     timer: 0,
-    duration: SPECIAL_PLANET_DURATION
+    duration: SPECIAL_PLANET_DURATION,
+    sequence: 0
   };
 
   trackerOpen = false;
@@ -669,6 +673,8 @@ export class GameState {
   }
 
   startEvent(event: WorldEvent, options: { fromNetwork?: boolean; timer?: number } = {}) {
+    this.specialScene.active = false;
+    this.specialScene.target = null;
     if (event.phase === 'dormant') {
       event.phase = 'active';
       event.timer = 0;
@@ -679,6 +685,7 @@ export class GameState {
     this.cutscene.event = event;
     this.cutscene.timer = options.timer ?? 0;
     this.cutscene.duration = eventDuration(event.kind);
+    this.cutscene.sequence += 1;
     this.closeMenus();
     this.setMessage(`CINEMATIC EVENT: ${event.name}`, 3);
     if (!options.fromNetwork) {
@@ -688,10 +695,13 @@ export class GameState {
 
   beginSpecialPlanetScene(target: Trackable) {
     target.discovered = true;
+    this.cutscene.active = false;
+    this.cutscene.event = null;
     this.specialScene.active = true;
     this.specialScene.target = target;
     this.specialScene.timer = 0;
     this.specialScene.duration = SPECIAL_PLANET_DURATION;
+    this.specialScene.sequence += 1;
     this.closeMenus();
   }
 
@@ -894,6 +904,7 @@ export class GameState {
 
     const event = this.cutscene.event;
     this.cutscene.active = false;
+    this.cutscene.event = null;
     if (!event) return;
 
     if (event.kind === 'Made in Heaven') {
@@ -936,6 +947,7 @@ export class GameState {
     this.specialScene.timer += dt;
     if (this.specialScene.timer >= this.specialScene.duration) {
       this.specialScene.active = false;
+      this.specialScene.target = null;
     }
   }
 
@@ -988,17 +1000,18 @@ export class GameState {
 
     this.systems.push(star);
 
+    let orbitRadius = 1120 + this.rng.int(-90, 120);
     for (let i = 0; i < planetCount; i += 1) {
-      const orbitRadius = 950 + i * this.rng.int(760, 1320);
       const angle = this.rng.range(0, Math.PI * 2);
       const kind = this.rng.choice(planetKinds);
       const radius = kind === 'Gas Giant' || kind === 'Mega Ringed Giant' ? this.rng.int(130, 215) : this.rng.int(60, 135);
+      const orbitTilt = this.rng.range(-0.13, 0.13);
       this.createObject({
         name: `${name} ${roman(i + 1)}`,
         kind,
         position: {
           x: x + Math.cos(angle) * orbitRadius,
-          y: y + this.rng.range(-260, 260),
+          y: y + Math.sin(angle * 0.9) * orbitRadius * orbitTilt,
           z: z + Math.sin(angle) * orbitRadius
         },
         radius,
@@ -1008,7 +1021,7 @@ export class GameState {
         orbitRadius,
         orbitSpeed: this.rng.range(0.00022, 0.00135),
         orbitAngle: angle,
-        orbitTilt: this.rng.range(-0.16, 0.16),
+        orbitTilt,
         rings: ['Ringed Giant', 'Gas Giant', 'Mega Ringed Giant'].includes(kind) && this.rng.next() < 0.96,
         atmosphere: this.rng.next() < 0.84,
         moons: ['Gas Giant', 'Ringed Giant', 'Frozen Titan', 'Mega Ringed Giant'].includes(kind) ? this.rng.int(2, 10) : this.rng.int(0, 2),
@@ -1017,9 +1030,135 @@ export class GameState {
         heartShape: false,
         heartStar: false
       });
+      orbitRadius += this.rng.int(980, 1650) + Math.max(0, radius - 95) * 3.2;
     }
 
     return star;
+  }
+
+  private moveSystem(system: SpaceObject, dx: number, dz: number) {
+    system.position.x += dx;
+    system.position.z += dz;
+    for (const obj of this.objects) {
+      if (obj !== system && obj.systemName === system.name) {
+        obj.position.x += dx;
+        obj.position.z += dz;
+      }
+    }
+  }
+
+  private separateStarSystems() {
+    for (let iteration = 0; iteration < 6; iteration += 1) {
+      for (let i = 0; i < this.systems.length; i += 1) {
+        for (let j = i + 1; j < this.systems.length; j += 1) {
+          const a = this.systems[i];
+          const b = this.systems[j];
+          let dx = b.position.x - a.position.x;
+          let dz = b.position.z - a.position.z;
+          let d = Math.hypot(dx, dz);
+          const galaxyLocal = a.name.includes('Galaxy') || b.name.includes('Galaxy');
+          const desired = galaxyLocal ? 9200 : 12800;
+          if (d >= desired) continue;
+          if (d < 0.001) {
+            const angle = ((i * 37 + j * 53) % 360) * (Math.PI / 180);
+            dx = Math.cos(angle);
+            dz = Math.sin(angle);
+            d = 1;
+          }
+          const push = (desired - d) * 0.5 + 120;
+          const ux = dx / d;
+          const uz = dz / d;
+          this.moveSystem(a, -ux * push, -uz * push);
+          this.moveSystem(b, ux * push, uz * push);
+        }
+      }
+    }
+  }
+
+  private pushEventAway(event: WorldEvent, x: number, z: number, desired: number, seedSalt: number, strength = 1) {
+    let dx = event.position.x - x;
+    let dz = event.position.z - z;
+    let d = Math.hypot(dx, dz);
+    if (d >= desired) return;
+    if (d < 0.001) {
+      const seed = this.eventHash(event, seedSalt);
+      const angle = ((seed % 3600) / 3600) * Math.PI * 2;
+      dx = Math.cos(angle);
+      dz = Math.sin(angle);
+      d = 1;
+    }
+    const push = (desired - d + 850) * strength;
+    event.position.x += (dx / d) * push;
+    event.position.z += (dz / d) * push;
+  }
+
+  private eventHash(event: WorldEvent, salt = 0) {
+    let hash = 2166136261 + salt;
+    for (let i = 0; i < event.id.length; i += 1) {
+      hash ^= event.id.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  private eventMapSpacing(event: WorldEvent) {
+    if (event.kind === 'Made in Heaven') return 44000;
+    if (['Galaxy Collision', 'Supermassive Black Hole', 'Hypernova', 'Neutron Star Merger'].includes(event.kind)) return 32000;
+    if (event.kind === 'Heart Supernova') return 22000;
+    if (event.kind === 'Wormhole' || event.kind === 'Quasar') return 26000;
+    return 16500;
+  }
+
+  private distributeWorldEvents() {
+    const showcaseKinds: ObjectKind[] = ['Star System', 'Galaxy', 'Galaxy Pair', 'Quasar', 'Nebula', 'Star Cluster'];
+    const anchors = this.objects.filter((obj) => showcaseKinds.includes(obj.kind));
+
+    const made = this.events.find((event) => event.kind === 'Made in Heaven');
+    if (made) {
+      made.position.x = 52000;
+      made.position.y = 74000;
+      made.position.z = -46000;
+    }
+
+    for (let iteration = 0; iteration < 8; iteration += 1) {
+      for (let i = 0; i < this.events.length; i += 1) {
+        const event = this.events[i];
+        const ownSpacing = this.eventMapSpacing(event);
+
+        for (let j = i + 1; j < this.events.length; j += 1) {
+          const other = this.events[j];
+          const desired = Math.max(ownSpacing, this.eventMapSpacing(other));
+          let dx = other.position.x - event.position.x;
+          let dz = other.position.z - event.position.z;
+          let d = Math.hypot(dx, dz);
+          if (d >= desired) continue;
+          if (d < 0.001) {
+            const angle = ((this.eventHash(event, j) % 3600) / 3600) * Math.PI * 2;
+            dx = Math.cos(angle);
+            dz = Math.sin(angle);
+            d = 1;
+          }
+          const push = (desired - d) * 0.5 + 350;
+          const ux = dx / d;
+          const uz = dz / d;
+          event.position.x -= ux * push;
+          event.position.z -= uz * push;
+          other.position.x += ux * push;
+          other.position.z += uz * push;
+        }
+
+        for (const anchor of anchors) {
+          if (event.kind === 'Heart Supernova' && anchor.name === "Zahra's Resonance") continue;
+          const desired =
+            anchor.kind === 'Star System'
+              ? Math.max(13000, ownSpacing * 0.58)
+              : anchor.kind === 'Quasar' || anchor.kind === 'Galaxy' || anchor.kind === 'Galaxy Pair'
+                ? Math.max(24000, ownSpacing * 0.72)
+                : 18000;
+          this.pushEventAway(event, anchor.position.x, anchor.position.z, desired, anchor.seed + iteration, 0.72);
+        }
+      }
+    }
   }
 
   private generateUniverse(reborn: boolean) {
@@ -1144,12 +1283,15 @@ export class GameState {
       }
     }
 
+    this.separateStarSystems();
+
     this.createCoreEvents();
     this.createRealExpansionEvents();
     this.createWormholeAndDeepSpaceEvents();
     this.applyZahrasCrownPoeticDescriptions();
     this.createZahrasResonance();
     this.createMyLoveForYouEvent();
+    this.distributeWorldEvents();
 
     if (reborn) {
       const made = this.events.find((event) => event.kind === 'Made in Heaven');
@@ -1465,14 +1607,15 @@ export class GameState {
     for (let i = 0; i < lovePlanets.length; i += 1) {
       const [planetName, description] = lovePlanets[i];
       const angle = (i * Math.PI * 2) / lovePlanets.length;
-      const orbitRadius = 1050 + i * 620;
+      const orbitRadius = 1350 + i * 1040;
+      const orbitTilt = 0.045;
       const kind = this.rng.choice(['Crystal Planet', 'Emerald World', 'Ocean World', 'Ringed Giant', 'Diamond Rain Planet'] as const);
       this.createObject({
         name: `Zahra's ${planetName}`,
         kind,
         position: {
           x: x + Math.cos(angle) * orbitRadius,
-          y: y + Math.sin(angle * 0.7) * 180,
+          y: y + Math.sin(angle * 0.9) * orbitRadius * orbitTilt,
           z: z + Math.sin(angle) * orbitRadius
         },
         radius: 82 + i * 9,
@@ -1482,7 +1625,7 @@ export class GameState {
         orbitRadius,
         orbitSpeed: 0.00038 + i * 0.00006,
         orbitAngle: angle,
-        orbitTilt: 0.06,
+        orbitTilt,
         rings: i === 1 || i === 4,
         atmosphere: true,
         moons: this.rng.int(0, 3),

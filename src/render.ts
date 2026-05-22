@@ -220,54 +220,172 @@ function createLabelSprite(text: string, tint: number) {
   return sprite;
 }
 
+function createConstellationLabel(text: string, tint: number) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 120;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas unavailable');
+  const c = new THREE.Color(tint);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = '800 42px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = `#${c.getHexString()}`;
+  ctx.shadowBlur = 28;
+  ctx.strokeStyle = `rgba(${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)}, .34)`;
+  ctx.lineWidth = 8;
+  ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
+  ctx.fillStyle = 'rgba(230, 244, 255, .72)';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.34,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false
+    })
+  );
+  sprite.scale.set(56, 10.5, 1);
+  return sprite;
+}
+
+function constellationPatchPoint(centerA: number, centerU: number, localX: number, localY: number, radius: number) {
+  const a = centerA + localX * 0.18;
+  const u = THREE.MathUtils.clamp(centerU + localY * 0.16, -0.86, 0.86);
+  const s = Math.sqrt(Math.max(0.001, 1 - u * u));
+  return new THREE.Vector3(Math.cos(a) * s * radius, u * radius * 0.72, Math.sin(a) * s * radius);
+}
+
 function makeConstellations() {
   const group = new THREE.Group();
-  const rand = seeded(740177);
-  const names = ["Zahra's Lyre", 'Twin Lantern', 'Rose Compass', 'Vesper Chain', 'Crownwake', 'Ivory Sail', 'Nova Harp'];
-  for (let c = 0; c < names.length; c += 1) {
-    const points: THREE.Vector3[] = [];
-    const centerA = rand() * Math.PI * 2;
-    const centerU = rand() * 1.1 - 0.55;
-    const count = 5 + Math.floor(rand() * 4);
-    for (let i = 0; i < count; i += 1) {
-      const a = centerA + (rand() - 0.5) * 0.55;
-      const u = THREE.MathUtils.clamp(centerU + (rand() - 0.5) * 0.35, -0.82, 0.82);
-      const r = 1060 + rand() * 360;
-      points.push(new THREE.Vector3(Math.cos(a) * Math.sqrt(1 - u * u) * r, u * r * 0.72, Math.sin(a) * Math.sqrt(1 - u * u) * r));
+  const designs = [
+    {
+      name: "Zahra's Lyre",
+      tint: COLORS.pink,
+      center: [0.28, 0.42],
+      points: [[-1.4, -0.2, 1.2], [-0.72, 0.68, 0.75], [0, 0.12, 1.5], [0.76, 0.72, 0.8], [1.42, -0.18, 1.2], [0, -0.82, 1.05], [-0.42, -1.28, 0.7], [0.42, -1.28, 0.7]],
+      edges: [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [4, 5], [5, 6], [5, 7], [6, 7]]
+    },
+    {
+      name: 'Twin Lantern',
+      tint: COLORS.gold,
+      center: [1.22, -0.18],
+      points: [[-1.45, 0.5, 1.25], [-0.85, 1.0, 0.72], [-0.22, 0.55, 0.95], [-0.86, -0.08, 0.82], [-1.42, -0.46, 0.65], [0.34, 0.52, 0.9], [1.02, 1.02, 0.76], [1.58, 0.44, 1.22], [1.06, -0.12, 0.78], [0.34, -0.28, 0.64]],
+      edges: [[0, 1], [1, 2], [2, 3], [3, 4], [0, 3], [5, 6], [6, 7], [7, 8], [8, 9], [5, 8], [2, 5]]
+    },
+    {
+      name: 'Rose Compass',
+      tint: COLORS.cyan,
+      center: [2.15, 0.2],
+      points: [[0, 1.34, 1.3], [0.48, 0.46, 0.75], [1.38, 0, 1.1], [0.46, -0.44, 0.72], [0, -1.36, 1.3], [-0.48, -0.44, 0.72], [-1.38, 0, 1.1], [-0.46, 0.46, 0.72], [0, 0, 1.55]],
+      edges: [[8, 0], [8, 2], [8, 4], [8, 6], [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 0]]
+    },
+    {
+      name: 'Vesper Chain',
+      tint: COLORS.softWhite,
+      center: [3.18, -0.36],
+      points: [[-1.6, -0.44, 0.7], [-1.08, 0.08, 0.8], [-0.48, 0.02, 1.05], [0.08, 0.54, 0.78], [0.72, 0.36, 1.28], [1.28, 0.86, 0.72], [1.66, 0.24, 0.92], [1.2, -0.34, 0.68], [0.42, -0.5, 0.74]],
+      edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [4, 6], [6, 7], [7, 8], [8, 2]]
+    },
+    {
+      name: 'Crownwake',
+      tint: COLORS.purple,
+      center: [4.0, 0.5],
+      points: [[-1.38, -0.38, 0.86], [-0.88, 0.84, 1.08], [-0.34, -0.1, 0.72], [0, 1.24, 1.48], [0.36, -0.08, 0.72], [0.88, 0.82, 1.08], [1.38, -0.36, 0.86], [-0.82, -0.82, 0.62], [0.82, -0.82, 0.62]],
+      edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [0, 7], [7, 8], [8, 6], [2, 4]]
+    },
+    {
+      name: 'Ivory Sail',
+      tint: COLORS.softWhite,
+      center: [5.05, -0.02],
+      points: [[-1.2, -0.82, 1.0], [-0.78, 0.72, 1.22], [-0.08, 1.22, 0.7], [0.26, 0.14, 1.05], [1.22, -0.5, 1.35], [-0.34, -0.34, 0.64], [0.5, -0.98, 0.74]],
+      edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 6], [6, 0], [0, 5], [5, 3], [5, 6]]
+    },
+    {
+      name: 'Nova Harp',
+      tint: COLORS.blue,
+      center: [5.82, 0.28],
+      points: [[-1.44, 0.98, 0.84], [-0.72, 0.5, 0.94], [0, 0.18, 1.42], [0.72, 0.5, 0.94], [1.44, 0.98, 0.84], [-0.98, -0.24, 0.72], [-0.36, -0.76, 0.78], [0.36, -0.76, 0.78], [0.98, -0.24, 0.72]],
+      edges: [[0, 1], [1, 2], [2, 3], [3, 4], [1, 5], [2, 6], [2, 7], [3, 8], [5, 6], [6, 7], [7, 8]]
     }
-    const positions: number[] = [];
-    for (let i = 0; i < points.length - 1; i += 1) {
-      positions.push(points[i].x, points[i].y, points[i].z, points[i + 1].x, points[i + 1].y, points[i + 1].z);
+  ] as const;
+
+  for (let c = 0; c < designs.length; c += 1) {
+    const design = designs[c];
+    const centerA = design.center[0];
+    const centerU = design.center[1];
+    const radius = 1320 + c * 28;
+    const points = design.points.map(([x, y]) => constellationPatchPoint(centerA, centerU, x, y, radius));
+    const linePositions: number[] = [];
+    for (const [a, b] of design.edges) {
+      const pa = points[a];
+      const pb = points[b];
+      linePositions.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z);
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
     const lines = new THREE.LineSegments(
-      geometry,
+      lineGeometry,
       new THREE.LineBasicMaterial({
-        color: c % 2 ? COLORS.softWhite : COLORS.cyan,
+        color: design.tint,
         transparent: true,
-        opacity: 0.22,
+        opacity: 0.26,
         blending: THREE.AdditiveBlending,
         depthWrite: false
       })
     );
     group.add(lines);
-    for (const point of points) {
+
+    const veil = makeParticleCloud(80, 42, design.tint, 7420 + c * 83, 0.42, 0.52);
+    const constellationCenter = constellationPatchPoint(centerA, centerU, 0, 0, radius);
+    veil.position.copy(constellationCenter).multiplyScalar(0.985);
+    veil.scale.set(1.35, 0.42, 0.1);
+    group.add(veil);
+
+    for (let i = 0; i < points.length; i += 1) {
+      const weight = design.points[i][2];
       const star = new THREE.Sprite(
         new THREE.SpriteMaterial({
-          map: createGlowTexture(c + 700, c % 2 ? COLORS.softWhite : COLORS.cyan),
-          color: c % 2 ? COLORS.softWhite : COLORS.cyan,
+          map: createGlowTexture(1700 + c * 37 + i, design.tint),
+          color: i % 3 === 0 ? mixHex(design.tint, COLORS.white, 0.28) : design.tint,
           transparent: true,
-          opacity: 0.58,
+          opacity: 0.64,
           blending: THREE.AdditiveBlending,
           depthWrite: false
         })
       );
-      star.position.copy(point);
-      star.scale.set(5.4, 5.4, 1);
+      star.position.copy(points[i]);
+      const starSize = 4.8 + weight * 3.4;
+      star.scale.set(starSize, starSize, 1);
       group.add(star);
+
+      if (weight > 1.1) {
+        const halo = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: createGlowTexture(1900 + c * 41 + i, mixHex(design.tint, COLORS.white, 0.25)),
+            color: design.tint,
+            transparent: true,
+            opacity: 0.16,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          })
+        );
+        halo.position.copy(points[i]);
+        halo.scale.set(starSize * 3.4, starSize * 3.4, 1);
+        group.add(halo);
+      }
     }
+
+    const label = createConstellationLabel(design.name, design.tint);
+    label.position.copy(constellationPatchPoint(centerA, centerU, 0, -1.85, radius));
+    group.add(label);
   }
+
   return group;
 }
 
@@ -1882,9 +2000,9 @@ class CinematicDirector {
   private pulseTargets: THREE.Object3D[] = [];
 
   update(state: GameState, dt: number) {
-    const event = state.cutscene.event;
-    const special = state.specialScene.target;
-    const key = event ? `event-${event.id}` : special ? `special-${special.id}` : '';
+    const event = state.cutscene.active ? state.cutscene.event : null;
+    const special = state.specialScene.active ? state.specialScene.target : null;
+    const key = event ? `event-${event.id}-${state.cutscene.sequence}` : special ? `special-${special.id}-${state.specialScene.sequence}` : '';
     if (key !== this.activeKey) {
       this.activeKey = key;
       this.build(event, special);

@@ -342,8 +342,8 @@ export class Hud {
   }
 
   private renderCinematicOverlay() {
-    const event = this.state.cutscene.event;
-    const special = this.state.specialScene.target;
+    const event = this.state.cutscene.active ? this.state.cutscene.event : null;
+    const special = this.state.specialScene.active ? this.state.specialScene.target : null;
     const active = this.state.cutscene.active || this.state.specialScene.active;
     this.cinematicOverlay.classList.toggle('hidden', !active);
     if (!active) return;
