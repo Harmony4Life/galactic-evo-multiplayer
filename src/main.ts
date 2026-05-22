@@ -96,6 +96,9 @@ if (qaCaptureEnabled) {
     ['qa-event-love-end', 'love end', () => qa.startEventAt('My Love For You', 0.86)],
     ['qa-event-xosupernova', 'xosupernova', () => qa.startEvent('xoSupaNovaxo')],
     ['qa-event-hypernova', 'hypernova', () => qa.startEvent('Hypernova Crown')],
+    ['qa-event-neutron', 'neutron', () => qa.startEvent('Neutron Star Ballet')],
+    ['qa-event-magnetar', 'magnetar', () => qa.startEvent('Magnetar Awakening')],
+    ['qa-event-planet-collision', 'planet collision', () => qa.startEvent('Planetary Collision')],
     ['qa-event-gamma', 'gamma', () => qa.startEvent('Gamma Ray Burst')],
     ['qa-event-blackhole', 'blackhole', () => qa.startEvent('Supermassive Black Hole')],
     ['qa-show-galaxy-collision', 'galaxy marker', () => qa.showTarget('Galaxy Collision')],
@@ -104,7 +107,9 @@ if (qaCaptureEnabled) {
     ['qa-event-made', 'made', () => qa.startEvent('Made in Heaven')],
     ['qa-event-made-vortex', 'made vortex', () => qa.startEventAt('Made in Heaven', 0.48)],
     ['qa-event-made-reset', 'made reset', () => qa.startEventAt('Made in Heaven', 0.82)],
-    ['qa-special-heart', 'heart planet', () => qa.startSpecial("Zahra's My Heart")]
+    ['qa-special-heart', 'heart planet', () => qa.startSpecial("Zahra's My Heart")],
+    ['qa-special-diamond', 'diamond interior', () => qa.startSpecial('Diamond Rain Planet')],
+    ['qa-special-iron', 'iron interior', () => qa.startSpecial('Iron Storm World')]
   ];
   for (const [id, label, run] of commands) {
     const button = document.createElement('button');

@@ -34,6 +34,7 @@ export class Hud {
   private miniMap = document.querySelector<HTMLCanvasElement>('#miniMap')!;
   private fullMapWrap = document.querySelector<HTMLDivElement>('#fullMapWrap')!;
   private fullMap = document.querySelector<HTMLCanvasElement>('#fullMap')!;
+  private fullMapClose = document.querySelector<HTMLButtonElement>('#fullMapClose')!;
   private cinematicOverlay = document.querySelector<HTMLDivElement>('#cinematicOverlay')!;
   private cinematicTitle = document.querySelector<HTMLDivElement>('.cinematic-title')!;
   private cinematicProgress = document.querySelector<HTMLSpanElement>('.cinematic-progress span')!;
@@ -41,9 +42,16 @@ export class Hud {
   private cinematicLine = document.querySelector<HTMLParagraphElement>('.cinematic-copy p')!;
   private draggingMap = false;
   private lastMapPoint = { x: 0, y: 0 };
+  private mapHover: { name: string; kind: string; color: number; position: { x: number; y: number }; distance: number } | null = null;
 
   constructor(private state: GameState) {
     this.fullMap.addEventListener('pointerdown', (event) => this.onFullMapDown(event));
+    this.fullMapClose.addEventListener('click', () => {
+      this.state.fullMapOpen = false;
+      this.state.showMinimap = true;
+      this.draggingMap = false;
+      this.state.setMessage('Universe map closed. Minimap restored.', 2.4);
+    });
     window.addEventListener('pointermove', (event) => this.onPointerMove(event));
     window.addEventListener('pointerup', () => {
       this.draggingMap = false;
@@ -77,8 +85,14 @@ export class Hud {
       ? `<b style="color:${hex(tracked.color)}">${escapeHtml(displayName(tracked))}</b><span>${Math.round(distance(pos, targetPosition(tracked))).toLocaleString()}u</span>`
       : '<b>No target</b><span>press T, Y, U, or M</span>';
     const multiplayer = this.state.multiplayer;
+    const trackedFriend = this.state.trackedRemotePlayerId ? this.state.remotePlayers.get(this.state.trackedRemotePlayerId) : null;
+    const friendText = trackedFriend
+      ? `${escapeHtml(trackedFriend.name)} ${Math.round(distance(pos, trackedFriend.position)).toLocaleString()}u`
+      : multiplayer.connected
+        ? 'awaiting friend'
+        : 'solo';
     const multiplayerText = multiplayer.connected
-      ? `<b style="color:${hex(COLORS.green)}">Room ${escapeHtml(multiplayer.roomCode || 'OPEN')}</b><span>${Math.min(multiplayer.peerCount || 1, 2)}/2 pilots connected</span>`
+      ? `<b style="color:${hex(COLORS.green)}">Room ${escapeHtml(multiplayer.roomCode || 'OPEN')}</b><span>${Math.min(multiplayer.peerCount || 1, 2)}/2 pilots | ${friendText}</span>`
       : '<b>Solo flight</b><span>use 2P co-op panel</span>';
 
     this.topHud.innerHTML = `
@@ -92,7 +106,7 @@ export class Hud {
   private renderPrompt() {
     const locked = document.pointerLockElement !== null;
     const lines = locked
-      ? 'WASD move | QE vertical | Shift boost | mouse/arrow look | Space scan | F trigger | H warp'
+      ? 'WASD move | QE vertical | Shift/Alt/Ctrl boost | B boost lock | mouse/arrow look | Space scan | F trigger | H warp'
       : 'Click flight view to engage mouse look | T tracker | Y events | U special planets | M map';
     this.promptChip.textContent = lines;
   }
@@ -202,6 +216,21 @@ export class Hud {
       ctx.arc(x, y, isEvent(target) ? 2.7 : target.kind === 'Star System' ? 1.8 : 4.2, 0, Math.PI * 2);
       ctx.fill();
     }
+    for (const pilot of this.state.remotePlayers.values()) {
+      const p = this.state.universeToMap(pilot.position, width - 28, height - 42, false);
+      const x = p.x + 14;
+      const y = p.y + 32;
+      if (x < 8 || x > width - 8 || y < 30 || y > height - 8) continue;
+      ctx.strokeStyle = hex(pilot.color);
+      ctx.fillStyle = '#050716';
+      ctx.beginPath();
+      ctx.arc(x, y, this.state.trackedRemotePlayerId === pilot.id ? 6 : 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = hex(pilot.color);
+      ctx.fillRect(x - 1, y - 7, 2, 14);
+      ctx.fillRect(x - 7, y - 1, 14, 2);
+    }
     const p = this.state.universeToMap(this.state.player.position, width - 28, height - 42, false);
     ctx.fillStyle = '#5aff8c';
     ctx.beginPath();
@@ -268,12 +297,48 @@ export class Hud {
       }
     }
 
+    for (const pilot of this.state.remotePlayers.values()) {
+      const p = this.state.universeToMap(pilot.position, width, height);
+      if (p.x < 18 || p.x > width - 18 || p.y < 100 || p.y > height - 18) continue;
+      ctx.strokeStyle = hex(pilot.color);
+      ctx.fillStyle = '#050716';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, this.state.trackedRemotePlayerId === pilot.id ? 10 : 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = hex(pilot.color);
+      ctx.fillRect(p.x - 2, p.y - 13, 4, 26);
+      ctx.fillRect(p.x - 13, p.y - 2, 26, 4);
+      ctx.font = '12px Inter, Arial';
+      ctx.fillText(pilot.name, p.x + 14, p.y - 8);
+    }
+
     const ship = this.state.universeToMap(this.state.player.position, width, height);
     ctx.fillStyle = '#5aff8c';
     ctx.beginPath();
     ctx.arc(ship.x, ship.y, 8, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillText('YOU', ship.x + 12, ship.y - 8);
+
+    if (this.mapHover) {
+      const boxWidth = 320;
+      const boxHeight = 74;
+      const x = Math.min(width - boxWidth - 18, this.mapHover.position.x + 18);
+      const y = Math.min(height - boxHeight - 18, Math.max(108, this.mapHover.position.y + 18));
+      ctx.fillStyle = 'rgba(5, 7, 22, 0.94)';
+      ctx.strokeStyle = hex(this.mapHover.color);
+      ctx.lineWidth = 1;
+      ctx.fillRect(x, y, boxWidth, boxHeight);
+      ctx.strokeRect(x + 0.5, y + 0.5, boxWidth - 1, boxHeight - 1);
+      ctx.fillStyle = hex(this.mapHover.color);
+      ctx.font = '700 15px Inter, Arial';
+      ctx.fillText(this.mapHover.name, x + 12, y + 24);
+      ctx.fillStyle = '#d2dcf0';
+      ctx.font = '12px Inter, Arial';
+      ctx.fillText(`${this.mapHover.kind} | ${Math.round(this.mapHover.distance).toLocaleString()}u`, x + 12, y + 48);
+      ctx.fillText('Click to warp/track. Drag empty space to pan. Close button exits.', x + 12, y + 64);
+    }
   }
 
   private renderCinematicOverlay() {
@@ -353,6 +418,12 @@ export class Hud {
     const x = ((event.clientX - rect.left) / rect.width) * this.fullMap.width;
     const y = ((event.clientY - rect.top) / rect.height) * this.fullMap.height;
     const target = this.state.targetFromMap(x, y, this.fullMap.width, this.fullMap.height);
+    const pilot = this.remotePlayerFromMap(x, y, this.fullMap.width, this.fullMap.height);
+    if (pilot) {
+      this.state.trackedRemotePlayerId = pilot.id;
+      this.state.setMessage(`Tracking ${pilot.name} on the universe map.`, 3);
+      return;
+    }
     if (target) {
       if (isEvent(target) && target.name === 'My Love For You' && !target.discovered) {
         this.state.setMessage('You must first search your feelings for the Zephyr.', 4);
@@ -366,10 +437,53 @@ export class Hud {
   }
 
   private onPointerMove(event: PointerEvent) {
+    if (!this.state.fullMapOpen) return;
+    const rect = this.fullMap.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * this.fullMap.width;
+    const y = ((event.clientY - rect.top) / rect.height) * this.fullMap.height;
+    this.mapHover = this.hoverFromMap(x, y, this.fullMap.width, this.fullMap.height);
     if (!this.draggingMap) return;
     this.state.mapPan.x += event.clientX - this.lastMapPoint.x;
     this.state.mapPan.y += event.clientY - this.lastMapPoint.y;
     this.lastMapPoint = { x: event.clientX, y: event.clientY };
+  }
+
+  private remotePlayerFromMap(x: number, y: number, width: number, height: number) {
+    let best: { id: string; name: string; color: number; position: { x: number; y: number; z: number } } | null = null;
+    let bestDistance = Infinity;
+    for (const pilot of this.state.remotePlayers.values()) {
+      const p = this.state.universeToMap(pilot.position, width, height);
+      const screenDistance = Math.hypot(x - p.x, y - p.y);
+      if (screenDistance < 18 && screenDistance < bestDistance) {
+        best = pilot;
+        bestDistance = screenDistance;
+      }
+    }
+    return best;
+  }
+
+  private hoverFromMap(x: number, y: number, width: number, height: number) {
+    const pilot = this.remotePlayerFromMap(x, y, width, height);
+    if (pilot) {
+      const p = this.state.universeToMap(pilot.position, width, height);
+      return {
+        name: pilot.name,
+        kind: 'Friend pilot',
+        color: pilot.color,
+        position: p,
+        distance: distance(this.state.player.position, pilot.position)
+      };
+    }
+    const target = this.state.targetFromMap(x, y, width, height);
+    if (!target) return null;
+    const p = this.state.universeToMap(target.position, width, height);
+    return {
+      name: displayName(target),
+      kind: displayKind(target),
+      color: target.color,
+      position: p,
+      distance: distance(this.state.player.position, target.position)
+    };
   }
 }
 

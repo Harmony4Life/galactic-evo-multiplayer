@@ -357,6 +357,25 @@ body {
   pointer-events: auto;
 }
 
+.full-map-close {
+  position: absolute;
+  right: max(28px, calc((100vw - min(1200px, calc(100vw - 84px))) / 2));
+  top: max(24px, calc((100vh - min(760px, calc(100vh - 84px))) / 2));
+  z-index: 2;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 90, 190, 0.55);
+  border-radius: 6px;
+  background: rgba(35, 10, 24, 0.88);
+  color: #ffd9ed;
+  font: 700 12px Inter, Arial, sans-serif;
+  cursor: pointer;
+}
+
+.full-map-close:hover {
+  background: rgba(255, 90, 190, 0.18);
+}
+
 #fullMap {
   width: min(1200px, calc(100vw - 84px));
   height: min(760px, calc(100vh - 84px));

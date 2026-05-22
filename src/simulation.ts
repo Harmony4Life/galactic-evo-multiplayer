@@ -95,6 +95,7 @@ export interface PlayerState {
   pitch: number;
   baseSpeed: number;
   boostMultiplier: number;
+  boostLocked: boolean;
 }
 
 export interface RemotePlayerState {
@@ -398,7 +399,8 @@ export class GameState {
     yaw: 0,
     pitch: 0,
     baseSpeed: 940,
-    boostMultiplier: 4.2
+    boostMultiplier: 4.2,
+    boostLocked: false
   };
 
   warp: WarpState = {
@@ -436,6 +438,7 @@ export class GameState {
   trackedTarget: Trackable | null = null;
   selectedTarget: Trackable | null = null;
   remotePlayers = new Map<string, RemotePlayerState>();
+  trackedRemotePlayerId: string | null = null;
   multiplayer: MultiplayerStatus = {
     enabled: false,
     connected: false,
@@ -670,6 +673,7 @@ export class GameState {
       event.phase = 'active';
       event.timer = 0;
       event.discovered = true;
+      this.version += 1;
     }
     this.cutscene.active = true;
     this.cutscene.event = event;
@@ -877,6 +881,7 @@ export class GameState {
         event.phase = 'aftermath';
         event.timer = 0;
         event.lingering = 1;
+        this.version += 1;
         this.setMessage(event.aftermath, 8);
       }
     }
@@ -911,6 +916,7 @@ export class GameState {
     event.phase = 'aftermath';
     event.timer = 0;
     event.lingering = 1;
+    this.version += 1;
     this.setMessage(event.aftermath, 8);
   }
 

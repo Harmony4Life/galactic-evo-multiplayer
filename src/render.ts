@@ -220,6 +220,57 @@ function createLabelSprite(text: string, tint: number) {
   return sprite;
 }
 
+function makeConstellations() {
+  const group = new THREE.Group();
+  const rand = seeded(740177);
+  const names = ["Zahra's Lyre", 'Twin Lantern', 'Rose Compass', 'Vesper Chain', 'Crownwake', 'Ivory Sail', 'Nova Harp'];
+  for (let c = 0; c < names.length; c += 1) {
+    const points: THREE.Vector3[] = [];
+    const centerA = rand() * Math.PI * 2;
+    const centerU = rand() * 1.1 - 0.55;
+    const count = 5 + Math.floor(rand() * 4);
+    for (let i = 0; i < count; i += 1) {
+      const a = centerA + (rand() - 0.5) * 0.55;
+      const u = THREE.MathUtils.clamp(centerU + (rand() - 0.5) * 0.35, -0.82, 0.82);
+      const r = 1060 + rand() * 360;
+      points.push(new THREE.Vector3(Math.cos(a) * Math.sqrt(1 - u * u) * r, u * r * 0.72, Math.sin(a) * Math.sqrt(1 - u * u) * r));
+    }
+    const positions: number[] = [];
+    for (let i = 0; i < points.length - 1; i += 1) {
+      positions.push(points[i].x, points[i].y, points[i].z, points[i + 1].x, points[i + 1].y, points[i + 1].z);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const lines = new THREE.LineSegments(
+      geometry,
+      new THREE.LineBasicMaterial({
+        color: c % 2 ? COLORS.softWhite : COLORS.cyan,
+        transparent: true,
+        opacity: 0.22,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    group.add(lines);
+    for (const point of points) {
+      const star = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: createGlowTexture(c + 700, c % 2 ? COLORS.softWhite : COLORS.cyan),
+          color: c % 2 ? COLORS.softWhite : COLORS.cyan,
+          transparent: true,
+          opacity: 0.58,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        })
+      );
+      star.position.copy(point);
+      star.scale.set(5.4, 5.4, 1);
+      group.add(star);
+    }
+  }
+  return group;
+}
+
 function heartShape() {
   const shape = new THREE.Shape();
   for (let deg = 0; deg <= 360; deg += 8) {
@@ -748,6 +799,7 @@ export class UniverseRenderer {
   private version = -1;
   private backdrop = makeNebulaBackdrop();
   private starLayers: THREE.Points[] = [];
+  private constellations = makeConstellations();
   private clock = new THREE.Clock();
   private cinematic = new CinematicDirector();
   private warp = new WarpTunnel();
@@ -774,6 +826,7 @@ export class UniverseRenderer {
     this.scene.add(this.backdrop);
     this.starLayers = [this.makeBackgroundStars(12000, 0.62, 0.9, 890), this.makeBackgroundStars(1800, 0.9, 2.1, 1880, true)];
     this.starLayers.forEach((layer) => this.scene.add(layer));
+    this.scene.add(this.constellations);
     this.scene.add(this.universeRoot, this.remoteRoot, this.cinematic.root, this.warp.root);
 
     this.scene.add(new THREE.HemisphereLight(0x9ab8ff, 0x160816, 0.78));
@@ -804,6 +857,7 @@ export class UniverseRenderer {
       this.universeRoot.visible = false;
       this.remoteRoot.visible = false;
       this.starLayers.forEach((layer) => (layer.visible = true));
+      this.constellations.visible = true;
       this.warp.root.visible = false;
       this.cinematic.root.visible = true;
       this.camera.position.set(0, 0, 0);
@@ -817,6 +871,7 @@ export class UniverseRenderer {
       this.universeRoot.visible = false;
       this.remoteRoot.visible = false;
       this.starLayers.forEach((layer) => (layer.visible = false));
+      this.constellations.visible = false;
       this.cinematic.root.visible = false;
       this.warp.root.visible = true;
       this.camera.position.set(0, 0, 0);
@@ -831,12 +886,15 @@ export class UniverseRenderer {
     this.universeRoot.visible = true;
     this.remoteRoot.visible = true;
     this.starLayers.forEach((layer) => (layer.visible = true));
+    this.constellations.visible = true;
 
     const f = forwardVector(state.player);
     this.camera.position.set(0, 0, 0);
     this.camera.lookAt(f.x, f.y, f.z);
     this.backdrop.rotation.y = state.player.yaw * 0.08 + elapsed * 0.003;
     this.backdrop.rotation.x = -state.player.pitch * 0.05;
+    this.constellations.rotation.y = state.player.yaw * 0.045 + elapsed * 0.001;
+    this.constellations.rotation.x = -state.player.pitch * 0.025;
 
     this.starLayers.forEach((layer, i) => {
       layer.rotation.y = state.player.yaw * (0.06 + i * 0.03) + elapsed * (0.002 + i * 0.001);
@@ -1483,11 +1541,12 @@ export class UniverseRenderer {
     }
 
     if (kind.includes('Black Hole') || kind === 'Tidal Disruption' || kind === 'Quasar') {
-      const blackHole = this.makeBlackHoleLike(size * 1.25, tint, kind === 'Quasar' || kind === 'Supermassive Black Hole');
+      const blackHole = this.makeBlackHoleLike(size * 1.38, tint, kind === 'Quasar' || kind === 'Supermassive Black Hole');
       group.add(blackHole);
-      group.add(this.spriteGlow(COLORS.gold, size * 7.6, 0.12), makeSpiralArms(kind === 'Tidal Disruption' ? 5 : 4, 140, size * 4.3, COLORS.gold, seed + 7, kind === 'Tidal Disruption' ? 0.88 : 0.52));
-      group.add(makeRadialRays(82, size * 0.9, size * 5.2, COLORS.gold, seed + 8, 0.3, kind === 'Tidal Disruption' ? 0.68 : 0.46));
-      this.addShockRings(group, 8, size * 1.1, size * 0.5, mixHex(tint, COLORS.white, 0.22), 0.32, 0.36);
+      group.add(this.spriteGlow(COLORS.gold, size * 9.2, 0.15), this.spriteGlow(COLORS.purple, size * 6.4, 0.08));
+      group.add(makeSpiralArms(kind === 'Tidal Disruption' ? 6 : 5, 190, size * 5.1, COLORS.gold, seed + 7, kind === 'Tidal Disruption' ? 0.88 : 0.62));
+      group.add(makeRadialRays(118, size * 0.9, size * 5.8, COLORS.gold, seed + 8, 0.26, kind === 'Tidal Disruption' ? 0.68 : 0.52));
+      this.addShockRings(group, 11, size * 1.05, size * 0.42, mixHex(tint, COLORS.white, 0.22), 0.36, 0.36);
       return group;
     }
 
@@ -1500,19 +1559,20 @@ export class UniverseRenderer {
     }
 
     if (kind === 'Galaxy Collision') {
-      group.add(makeElegantGalaxyPair(size * 0.95, event.color, COLORS.gold, seed + 11));
-      group.add(this.spriteGlow(mixHex(event.color, COLORS.gold, 0.42), size * 4.8, 0.08));
-      this.addShockRings(group, 4, size * 0.62, size * 0.34, mixHex(event.color, COLORS.gold, 0.4), 0.16, 0.42);
+      group.add(makeElegantGalaxyPair(size * 1.65, COLORS.cyan, COLORS.gold, seed + 11));
+      group.add(makeSmoothTidalBridge(size * 2.3, COLORS.cyan, COLORS.gold, seed + 12));
+      group.add(this.spriteGlow(mixHex(event.color, COLORS.gold, 0.42), size * 8.4, 0.12));
+      this.addShockRings(group, 7, size * 0.88, size * 0.38, mixHex(event.color, COLORS.gold, 0.4), 0.22, 0.42);
       return group;
     }
 
     if (kind === 'Planet Collision') {
-      const a = this.eventPlanet(size * 0.72, COLORS.blue, seed + 13);
-      const b = this.eventPlanet(size * 0.82, COLORS.orange, seed + 14);
-      a.position.x = -size * 1.15;
-      b.position.x = size * 1.05;
-      group.add(a, b, this.flatDisk(size * 3.3, size * 0.8, COLORS.gold, 0.28), makeRadialRays(88, size * 0.8, size * 4.4, COLORS.orange, seed + 15, 0.72, 0.64));
-      group.add(makeParticleCloud(760, size * 3.1, COLORS.orange, seed + 16, 0.52, 0.16));
+      const a = this.eventPlanet(size * 0.38, COLORS.blue, seed + 13);
+      const b = this.eventPlanet(size * 0.42, COLORS.orange, seed + 14);
+      a.position.x = -size * 0.92;
+      b.position.x = size * 0.86;
+      group.add(a, b, this.flatDisk(size * 2.35, size * 0.38, COLORS.gold, 0.2), makeRadialRays(118, size * 0.34, size * 3.8, COLORS.orange, seed + 15, 0.72, 0.58));
+      group.add(makeParticleCloud(980, size * 2.5, COLORS.orange, seed + 16, 0.52, 0.14));
       return group;
     }
 
@@ -1618,7 +1678,7 @@ export class UniverseRenderer {
   private buildEvent(event: WorldEvent) {
     const group = new THREE.Group();
     const markerSize = Math.max(1.6, Math.min(24, event.radius * 0.009));
-    const size = event.kind === 'Galaxy Collision' ? Math.min(3.8, markerSize * 0.16) : markerSize;
+    const size = event.kind === 'Galaxy Collision' ? Math.min(9.5, markerSize * 0.42) : event.kind === 'Planet Collision' ? Math.min(7.2, markerSize * 0.56) : markerSize;
     const name = event.name === 'My Love For You' && !event.discovered ? '???' : event.name;
     const root = this.makeEventPhenomenon(event, size);
     group.userData.pulseRoot = root;
@@ -2061,6 +2121,62 @@ class CinematicDirector {
     return group;
   }
 
+  private streakField(count: number, seed: number, radius: number, length: number, tint: number, opacity = 0.62, slant = 0.35) {
+    const rand = seeded(seed);
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const palette = [tint, mixHex(tint, COLORS.white, 0.42), COLORS.white, COLORS.gold, COLORS.purple];
+    for (let i = 0; i < count; i += 1) {
+      const x = (rand() - 0.5) * radius * 2;
+      const y = (rand() - 0.5) * radius * 1.15;
+      const z = (rand() - 0.5) * radius * 0.5;
+      const fall = length * (0.55 + rand());
+      positions.push(x, y, z, x + fall * slant * (0.45 + rand()), y - fall, z + (rand() - 0.5) * length * 0.12);
+      const c = new THREE.Color(palette[Math.floor(rand() * palette.length)]);
+      colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    return new THREE.LineSegments(
+      geometry,
+      new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+  }
+
+  private crackedCinematicPlanet(size: number, base: number, accent: number, seed: number) {
+    const group = new THREE.Group();
+    const planet = this.cinematicPlanet(size, base, seed);
+    group.add(planet);
+    const rand = seeded(seed + 44);
+    for (let i = 0; i < 34; i += 1) {
+      const a = rand() * Math.PI * 2;
+      const r0 = size * (0.24 + rand() * 0.18);
+      const r1 = size * (0.62 + rand() * 0.35);
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(Math.cos(a) * r0, Math.sin(a) * r0 * 0.82, size * 0.72),
+          new THREE.Vector3(Math.cos(a + (rand() - 0.5) * 0.42) * r1, Math.sin(a) * r1 * 0.82, size * 0.78)
+        ]),
+        new THREE.LineBasicMaterial({
+          color: i % 4 === 0 ? COLORS.white : accent,
+          transparent: true,
+          opacity: 0.72,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        })
+      );
+      group.add(line);
+    }
+    return group;
+  }
+
   private buildLoveCinematic(event: WorldEvent, tint: number, seed: number) {
     const intro = new THREE.Group();
     const introHeart = this.pulse(makeHeartMesh(tint, 14.5), 0, 0.5, 0.075, 10);
@@ -2209,6 +2325,79 @@ class CinematicDirector {
     this.addStage(remnant, 0.68, 1.22, 0.78, 1.06);
   }
 
+  private buildPlanetCollisionCinematic(event: WorldEvent, seed: number) {
+    const approach = new THREE.Group();
+    const blue = this.cinematicPlanet(5.2, COLORS.blue, seed + 421);
+    const orange = this.cinematicPlanet(5.9, COLORS.orange, seed + 422);
+    blue.position.x = -18;
+    orange.position.x = 18;
+    approach.add(this.cinematicGlow(COLORS.orange, 82, 0.12), blue, orange);
+    approach.add(this.streakField(160, seed + 423, 42, 7, COLORS.gold, 0.24, 0.08));
+    this.addStage(approach, 0, 0.42, 1.0, 0.52);
+
+    const impact = new THREE.Group();
+    impact.add(this.cinematicGlow(COLORS.white, 70, 0.26), this.cinematicGlow(COLORS.orange, 124, 0.34), this.luminousCore(5.4, COLORS.white, 0.86));
+    impact.add(makeRadialRays(360, 4, 76, COLORS.orange, seed + 424, 0.78, 0.82));
+    impact.add(makeParticleCloud(5000, 54, COLORS.orange, seed + 425, 0.64, 0.16));
+    impact.add(makeDiamondShardField(180, 38, COLORS.gold, seed + 426, 0.17));
+    impact.add(this.ringSet(COLORS.gold, 11, 9, 2.25, 0.42, 0.5));
+    this.addStage(impact, 0.28, 0.82, 0.22, 1.46);
+
+    const aftermath = new THREE.Group();
+    const molten = this.crackedCinematicPlanet(8.8, COLORS.orange, COLORS.yellow, seed + 427);
+    aftermath.add(this.cinematicGlow(COLORS.red, 82, 0.26), this.cinematicGlow(COLORS.gold, 70, 0.14), molten);
+    aftermath.add(makeParticleCloud(2600, 38, COLORS.gold, seed + 428, 0.42, 0.12));
+    aftermath.add(this.ringSet(COLORS.gold, 15, 8.5, 1.35, 0.36, 0.42));
+    this.addStage(aftermath, 0.62, 1.2, 0.78, 1.04);
+  }
+
+  private buildNeutronCinematic(event: WorldEvent, tint: number, seed: number) {
+    const inspiral = new THREE.Group();
+    const a = this.luminousCore(2.9, COLORS.cyan, 0.94);
+    const b = this.luminousCore(2.9, COLORS.softWhite, 0.92);
+    a.position.x = -12;
+    b.position.x = 12;
+    inspiral.add(this.cinematicGlow(COLORS.cyan, 74, 0.18), a, b);
+    inspiral.add(makeLoopField(18, 22, COLORS.cyan, seed + 431, 0.44));
+    inspiral.add(this.ringSet(COLORS.softWhite, 14, 7, 1.6, 0.32, 0.48));
+    this.addStage(inspiral, 0, 0.54, 1.18, 0.42);
+
+    const merger = new THREE.Group();
+    merger.add(this.cinematicGlow(COLORS.white, 92, 0.32), this.cinematicGlow(tint, 124, 0.26), this.luminousCore(5.1, COLORS.white, 0.92));
+    merger.add(makeRadialRays(300, 4, 72, COLORS.cyan, seed + 432, 0.52, 0.76));
+    merger.add(makeRadialRays(210, 4, 68, COLORS.gold, seed + 433, 0.46, 0.58));
+    merger.add(makeParticleCloud(4400, 50, tint, seed + 434, 0.56, 0.15));
+    this.addStage(merger, 0.38, 0.82, 0.25, 1.42);
+
+    const remnant = new THREE.Group();
+    remnant.add(this.cinematicGlow(COLORS.purple, 110, 0.22), this.cinematicGlow(COLORS.gold, 78, 0.16));
+    remnant.add(makeSpiralArms(10, 240, 44, COLORS.gold, seed + 435, 0.55));
+    remnant.add(makeParticleCloud(3800, 52, COLORS.purple, seed + 436, 0.54, 0.12));
+    remnant.add(this.ringSet(tint, 14, 10, 1.8, 0.34, 0.48));
+    this.addStage(remnant, 0.66, 1.2, 0.72, 1.06);
+  }
+
+  private buildMagnetarCinematic(event: WorldEvent, tint: number, seed: number) {
+    const calm = new THREE.Group();
+    calm.add(this.cinematicGlow(tint, 86, 0.22), this.luminousCore(4.5, COLORS.white, 0.9));
+    calm.add(makeLoopField(30, 24, tint, seed + 441, 0.5));
+    calm.add(this.ringSet(tint, 10, 8, 1.4, 0.34, 0.58));
+    this.addStage(calm, 0, 0.58, 0.86, 1.18);
+
+    const quake = new THREE.Group();
+    quake.add(this.cinematicGlow(COLORS.pink, 108, 0.3), this.cinematicGlow(COLORS.cyan, 82, 0.16), this.luminousCore(5.4, COLORS.white, 0.94));
+    quake.add(makeLoopField(44, 30, COLORS.pink, seed + 442, 0.66));
+    quake.add(makeRadialRays(260, 4, 70, tint, seed + 443, 0.92, 0.76));
+    quake.add(this.streakField(120, seed + 444, 58, 12, COLORS.cyan, 0.32, -0.12));
+    this.addStage(quake, 0.32, 0.9, 0.36, 1.48);
+
+    const after = new THREE.Group();
+    after.add(this.cinematicGlow(tint, 96, 0.18));
+    after.add(this.ringSet(COLORS.cyan, 20, 9, 1.55, 0.32, 0.52));
+    after.add(makeParticleCloud(2500, 44, tint, seed + 445, 0.46, 0.12));
+    this.addStage(after, 0.68, 1.22, 0.76, 1.06);
+  }
+
   private buildMadeInHeavenCinematic(event: WorldEvent, seed: number) {
     const universe = new THREE.Group();
     universe.add(this.cinematicGlow(COLORS.white, 120, 0.22), this.cinematicGlow(COLORS.purple, 98, 0.18));
@@ -2301,18 +2490,7 @@ class CinematicDirector {
     }
 
     if (kind === 'Planet Collision') {
-      this.root.add(this.cinematicGlow(COLORS.orange, 70, 0.24));
-      const planetA = this.cinematicPlanet(6.1, COLORS.blue, seed + 17);
-      const planetB = this.cinematicPlanet(7.0, COLORS.orange, seed + 18);
-      planetA.position.x = -10.4;
-      planetB.position.x = 10.1;
-      this.root.add(planetA, planetB);
-      this.core = planetB;
-      this.addCinematicRays(180, 5, 42, COLORS.orange, seed + 19, 0.72, 0.74);
-      this.root.add(makeDiamondShardField(90, 17, COLORS.gold, seed + 20, 0.16));
-      this.particles = makeParticleCloud(2400, 34, COLORS.orange, seed + 21, 0.48, 0.17);
-      this.root.add(this.particles);
-      this.addRings(COLORS.gold, 10, 8, 0.38);
+      this.buildPlanetCollisionCinematic(event, seed);
       return;
     }
 
@@ -2320,18 +2498,8 @@ class CinematicDirector {
       if (kind === 'Galaxy Collision') {
         this.buildGalaxyCollisionCinematic(event, tint, seed);
         return;
-      } else {
-        const leftCore = new THREE.Mesh(new THREE.SphereGeometry(2.5, 40, 20), new THREE.MeshBasicMaterial({ color: COLORS.cyan, blending: THREE.AdditiveBlending }));
-        const rightCore = new THREE.Mesh(new THREE.SphereGeometry(2.5, 40, 20), new THREE.MeshBasicMaterial({ color: COLORS.gold, blending: THREE.AdditiveBlending }));
-        leftCore.position.x = -7;
-        rightCore.position.x = 7;
-        this.root.add(leftCore, rightCore);
-        this.addCinematicRays(170, 4, 38, tint, seed + 27, 0.5, 0.7);
       }
-      this.root.add(this.cinematicGlow(tint, 72, 0.2));
-      this.particles = makeParticleCloud(2600, 38, tint, seed + 28, 0.42, 0.15);
-      this.root.add(this.particles);
-      this.addRings(tint, 12, 7.5, 0.38);
+      this.buildNeutronCinematic(event, tint, seed);
       return;
     }
 
@@ -2341,7 +2509,11 @@ class CinematicDirector {
     }
 
     if (kind === 'Magnetar' || kind === 'Pulsar') {
-      this.root.add(this.cinematicGlow(tint, 70, 0.22), makeLoopField(kind === 'Magnetar' ? 34 : 18, 19, tint, seed + 32, 0.62));
+      if (kind === 'Magnetar') {
+        this.buildMagnetarCinematic(event, tint, seed);
+        return;
+      }
+      this.root.add(this.cinematicGlow(tint, 70, 0.22), makeLoopField(18, 19, tint, seed + 32, 0.62));
       this.core = new THREE.Mesh(new THREE.SphereGeometry(4.2, 54, 26), new THREE.MeshBasicMaterial({ color: COLORS.white, transparent: true, opacity: 0.94, blending: THREE.AdditiveBlending }));
       this.root.add(this.core);
       const beam = this.cinematicBeam(kind === 'Pulsar' ? 112 : 58, kind === 'Pulsar' ? 0.85 : 0.38, COLORS.cyan, kind === 'Pulsar' ? 0.5 : 0.3);
@@ -2440,6 +2612,37 @@ class CinematicDirector {
       this.particles = makeParticleCloud(1800, 32, mixHex(tint, COLORS.white, 0.12), seed + 4, 0.45, 0.14);
       this.root.add(this.particles);
       this.addRings(tint, 8, 9, 0.28);
+      return;
+    }
+
+    if (special.kind === 'Diamond Rain Planet' || special.kind === 'Diamond Rain') {
+      const interior = new THREE.Group();
+      const sky = new THREE.Mesh(
+        new THREE.SphereGeometry(78, 64, 32),
+        new THREE.MeshBasicMaterial({ color: 0x071a44, transparent: true, opacity: 0.42, side: THREE.BackSide, blending: THREE.AdditiveBlending })
+      );
+      interior.add(sky, this.cinematicGlow(COLORS.cyan, 118, 0.26), this.cinematicGlow(COLORS.blue, 86, 0.18));
+      interior.add(this.streakField(360, seed + 5, 74, 12, COLORS.cyan, 0.68, 0.24));
+      interior.add(makeDiamondShardField(260, 45, COLORS.cyan, seed + 6, 0.18));
+      interior.add(this.ringSet(COLORS.cyan, 14, 12, 2.2, 0.22, 0.26));
+      this.particles = makeParticleCloud(2200, 58, COLORS.cyan, seed + 7, 0.44, 0.11);
+      interior.add(this.particles);
+      this.root.add(interior);
+      return;
+    }
+
+    if (special.kind === 'Iron Storm World') {
+      const interior = new THREE.Group();
+      const sky = new THREE.Mesh(
+        new THREE.SphereGeometry(78, 64, 32),
+        new THREE.MeshBasicMaterial({ color: 0x2a0704, transparent: true, opacity: 0.48, side: THREE.BackSide, blending: THREE.AdditiveBlending })
+      );
+      interior.add(sky, this.cinematicGlow(COLORS.orange, 112, 0.28), this.cinematicGlow(COLORS.red, 86, 0.18));
+      interior.add(this.streakField(430, seed + 8, 76, 16, COLORS.orange, 0.76, 0.44));
+      interior.add(makeRadialRays(160, 8, 62, COLORS.gold, seed + 9, 0.18, 0.38));
+      interior.add(makeParticleCloud(2300, 60, COLORS.red, seed + 10, 0.38, 0.12));
+      interior.add(this.ringSet(COLORS.orange, 12, 14, 2.4, 0.2, 0.22));
+      this.root.add(interior);
       return;
     }
 

@@ -7,6 +7,7 @@ function normalizeCode(event: KeyboardEvent) {
   const lookup: Record<string, string> = {
     w: 'KeyW',
     a: 'KeyA',
+    b: 'KeyB',
     s: 'KeyS',
     d: 'KeyD',
     q: 'KeyQ',
@@ -26,6 +27,8 @@ function normalizeCode(event: KeyboardEvent) {
     ArrowUp: 'ArrowUp',
     ArrowDown: 'ArrowDown',
     Shift: 'ShiftLeft',
+    Alt: 'AltLeft',
+    Control: 'ControlLeft',
     ',': 'Comma',
     '.': 'Period',
     '/': 'Slash',
@@ -34,6 +37,12 @@ function normalizeCode(event: KeyboardEvent) {
   };
   if (/^[1-9]$/.test(key)) return `Digit${key}`;
   return lookup[key] ?? event.code;
+}
+
+function isTextEntryTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
 }
 
 export class InputController {
@@ -46,7 +55,14 @@ export class InputController {
     private hud: Hud
   ) {
     window.addEventListener('keydown', (event) => {
+      if (isTextEntryTarget(event.target)) return;
       const code = normalizeCode(event);
+      if (code === 'KeyB') {
+        this.state.player.boostLocked = !this.state.player.boostLocked;
+        this.state.setMessage(this.state.player.boostLocked ? 'Boost lock engaged.' : 'Boost lock disengaged.', 1.8);
+        event.preventDefault();
+        return;
+      }
       const handled = this.state.handleKey(code);
       if (handled || ['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Slash'].includes(code)) {
         event.preventDefault();
@@ -55,6 +71,7 @@ export class InputController {
     });
 
     window.addEventListener('keyup', (event) => {
+      if (isTextEntryTarget(event.target)) return;
       this.keys.delete(normalizeCode(event));
     });
 
@@ -90,7 +107,16 @@ export class InputController {
     if (this.keys.has('ArrowDown')) this.state.player.pitch -= turn;
     this.state.player.pitch = clamp(this.state.player.pitch, -1.32, 1.32);
 
-    const boost = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? this.state.player.boostMultiplier : 1;
+    const boost =
+      this.state.player.boostLocked ||
+      this.keys.has('ShiftLeft') ||
+      this.keys.has('ShiftRight') ||
+      this.keys.has('AltLeft') ||
+      this.keys.has('AltRight') ||
+      this.keys.has('ControlLeft') ||
+      this.keys.has('ControlRight')
+        ? this.state.player.boostMultiplier
+        : 1;
     const speed = this.state.player.baseSpeed * boost * dt;
     const forward = forwardVector(this.state.player);
     const right = rightVector(this.state.player);

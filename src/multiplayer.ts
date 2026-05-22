@@ -181,6 +181,7 @@ export class MultiplayerClient {
         this.room = null;
         this.client = null;
         this.state.remotePlayers.clear();
+        this.state.trackedRemotePlayerId = null;
         this.state.multiplayer.connected = false;
         this.state.multiplayer.connecting = false;
         this.state.multiplayer.peerCount = 0;
@@ -213,6 +214,7 @@ export class MultiplayerClient {
     }
     this.client = null;
     this.state.remotePlayers.clear();
+    this.state.trackedRemotePlayerId = null;
     this.state.multiplayer.connected = false;
     this.state.multiplayer.connecting = false;
     this.state.multiplayer.peerCount = 0;
@@ -242,9 +244,13 @@ export class MultiplayerClient {
         pitch: Number(player.pitch) || 0,
         updatedAt: Number(player.updatedAt) || Date.now()
       });
+      if (!this.state.trackedRemotePlayerId) this.state.trackedRemotePlayerId = id;
     });
     for (const id of this.state.remotePlayers.keys()) {
-      if (!seen.has(id)) this.state.remotePlayers.delete(id);
+      if (!seen.has(id)) {
+        this.state.remotePlayers.delete(id);
+        if (this.state.trackedRemotePlayerId === id) this.state.trackedRemotePlayerId = null;
+      }
     }
     this.state.multiplayer.peerCount = players.size ?? seen.size + 1;
     this.renderPanel();
