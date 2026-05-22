@@ -51,6 +51,8 @@ export class InputController {
   private cameraDragActive = false;
   private cameraDragMoved = false;
   private dragPointerId = -1;
+  private dragLastX = 0;
+  private dragLastY = 0;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -89,16 +91,20 @@ export class InputController {
       this.cameraDragActive = true;
       this.cameraDragMoved = false;
       this.dragPointerId = event.pointerId;
+      this.dragLastX = event.clientX;
+      this.dragLastY = event.clientY;
       this.canvas.setPointerCapture(event.pointerId);
     });
 
     this.canvas.addEventListener('pointermove', (event) => {
       if (!this.cameraDragActive || document.pointerLockElement === this.canvas || event.pointerId !== this.dragPointerId) return;
-      const dx = event.movementX;
-      const dy = event.movementY;
+      const dx = event.clientX - this.dragLastX;
+      const dy = event.clientY - this.dragLastY;
+      this.dragLastX = event.clientX;
+      this.dragLastY = event.clientY;
       if (Math.abs(dx) + Math.abs(dy) > 1) this.cameraDragMoved = true;
       this.state.player.cameraYawOffset += dx * 0.006;
-      this.state.player.cameraPitchOffset = clamp(this.state.player.cameraPitchOffset - dy * 0.0045, -0.18, 1.22);
+      this.state.player.cameraPitchOffset = clamp(this.state.player.cameraPitchOffset - dy * 0.0045, -0.92, 0.92);
       event.preventDefault();
     });
 
@@ -123,6 +129,10 @@ export class InputController {
         return;
       }
       if (!this.state.fullMapOpen && !this.state.trackerOpen && !this.state.eventMenuOpen && !this.state.specialMenuOpen) {
+        this.state.player.yaw += this.state.player.cameraYawOffset;
+        this.state.player.pitch = clamp(this.state.player.pitch + this.state.player.cameraPitchOffset, -1.32, 1.32);
+        this.state.player.cameraYawOffset = 0;
+        this.state.player.cameraPitchOffset = 0;
         void this.canvas.requestPointerLock().catch(() => undefined);
       }
     });

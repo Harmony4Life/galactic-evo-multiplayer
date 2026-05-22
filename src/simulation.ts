@@ -108,6 +108,7 @@ export interface PlayerState {
   baseSpeed: number;
   boostMultiplier: number;
   boostLocked: boolean;
+  shipColor: number;
   cameraYawOffset: number;
   cameraPitchOffset: number;
 }
@@ -368,6 +369,22 @@ export function isEvent(target: Trackable): target is WorldEvent {
   return target.type === 'event';
 }
 
+export function randomShipColor() {
+  const palette = [
+    COLORS.cyan,
+    COLORS.pink,
+    COLORS.gold,
+    COLORS.green,
+    COLORS.purple,
+    COLORS.softWhite,
+    COLORS.orange,
+    COLORS.emerald,
+    0xff4fb8,
+    0x8ddcff
+  ];
+  return palette[Math.floor(Math.random() * palette.length)];
+}
+
 export function targetPosition(target: Trackable): Vec3 {
   return target.position;
 }
@@ -457,8 +474,9 @@ export class GameState {
     baseSpeed: 940,
     boostMultiplier: 4.2,
     boostLocked: false,
+    shipColor: randomShipColor(),
     cameraYawOffset: 0,
-    cameraPitchOffset: 1.02
+    cameraPitchOffset: 0
   };
 
   warp: WarpState = {

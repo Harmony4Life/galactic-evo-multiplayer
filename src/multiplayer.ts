@@ -311,7 +311,7 @@ export class MultiplayerClient {
     const { position } = this.state.player;
     return {
       name: cleanName(this.nameInput?.value || 'Pilot'),
-      color: colorForSession(this.room?.sessionId || 'local'),
+      color: this.state.player.shipColor,
       x: position.x,
       y: position.y,
       z: position.z

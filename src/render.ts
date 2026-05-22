@@ -5,7 +5,6 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import {
   COLORS,
   distance,
-  forwardVector,
   GameState,
   hasPersistentAftermath,
   isEvent,
@@ -1088,6 +1087,7 @@ export class UniverseRenderer {
   private starLayers: THREE.Points[] = [];
   private constellations = makeConstellations();
   private localShip: THREE.Group;
+  private localShipTint: number = COLORS.cyan;
   private clock = new THREE.Clock();
   private cinematic = new CinematicDirector();
   private warp = new WarpTunnel();
@@ -1141,6 +1141,7 @@ export class UniverseRenderer {
     if (state.version !== this.version) this.rebuild(state);
 
     const elapsed = this.clock.getElapsedTime();
+    this.ensureLocalShipTint(state.player.shipColor);
     const backdropMaterial = this.backdrop.material as THREE.ShaderMaterial;
     backdropMaterial.uniforms.time.value = elapsed;
 
@@ -1183,22 +1184,24 @@ export class UniverseRenderer {
     this.starLayers.forEach((layer) => (layer.visible = true));
     this.constellations.visible = true;
 
-    const f = forwardVector(state.player);
+    const f = this.viewForward(state);
+    const viewYaw = state.player.yaw + state.player.cameraYawOffset;
+    const viewPitch = THREE.MathUtils.clamp(state.player.pitch + state.player.cameraPitchOffset, -1.32, 1.32);
     this.camera.position.set(0, 0, 0);
     this.camera.lookAt(f.x, f.y, f.z);
     if (this.warp.root.visible) {
       this.warp.root.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(f.x, f.y, f.z).normalize());
     }
     this.updateCameraShip(state, elapsed);
-    this.backdrop.rotation.y = state.player.yaw * 0.08 + elapsed * 0.003;
-    this.backdrop.rotation.x = -state.player.pitch * 0.05;
-    this.constellations.rotation.y = state.player.yaw * 0.045 + elapsed * 0.001;
-    this.constellations.rotation.x = -state.player.pitch * 0.025;
+    this.backdrop.rotation.y = viewYaw * 0.08 + elapsed * 0.003;
+    this.backdrop.rotation.x = -viewPitch * 0.05;
+    this.constellations.rotation.y = viewYaw * 0.045 + elapsed * 0.001;
+    this.constellations.rotation.x = -viewPitch * 0.025;
     this.updateConstellationRegions(state);
 
     this.starLayers.forEach((layer, i) => {
-      layer.rotation.y = state.player.yaw * (0.06 + i * 0.03) + elapsed * (0.002 + i * 0.001);
-      layer.rotation.x = -state.player.pitch * (0.04 + i * 0.02);
+      layer.rotation.y = viewYaw * (0.06 + i * 0.03) + elapsed * (0.002 + i * 0.001);
+      layer.rotation.x = -viewPitch * (0.04 + i * 0.02);
     });
 
     for (const target of state.allTrackable()) {
@@ -1274,6 +1277,25 @@ export class UniverseRenderer {
     });
   }
 
+  private ensureLocalShipTint(tint: number) {
+    if (this.localShipTint === tint) return;
+    this.localShip.removeFromParent();
+    this.localShip = this.makeCameraShip(tint);
+    this.localShipTint = tint;
+    this.camera.add(this.localShip);
+  }
+
+  private viewForward(state: GameState) {
+    const yaw = state.player.yaw + state.player.cameraYawOffset;
+    const pitch = THREE.MathUtils.clamp(state.player.pitch + state.player.cameraPitchOffset, -1.32, 1.32);
+    const cp = Math.cos(pitch);
+    return {
+      x: Math.sin(yaw) * cp,
+      y: Math.sin(pitch),
+      z: Math.cos(yaw) * cp
+    };
+  }
+
   private updateCameraShip(state: GameState, elapsed: number) {
     this.localShip.visible = !state.cutscene.active && !state.specialScene.active;
     if (!this.localShip.visible) return;
@@ -1286,18 +1308,18 @@ export class UniverseRenderer {
     const floating = !state.warp.active;
     const alignSpin = phase === 'align' ? (1 - align) * Math.PI * 4.4 : 0;
     const alignBank = phase === 'align' ? Math.sin(align * Math.PI) * 0.76 : 0;
-    const viewPitch = state.player.cameraPitchOffset;
-    const viewYaw = state.player.cameraYawOffset;
-    const topView = THREE.MathUtils.clamp(viewPitch, -0.18, 1.22);
+    const orbitPitch = THREE.MathUtils.clamp(state.player.cameraPitchOffset, -0.92, 0.92);
+    const orbitYaw = state.player.cameraYawOffset;
+    const topView = 1.08 + Math.max(0, orbitPitch) * 0.18;
 
     this.localShip.position.set(
       Math.sin(elapsed * 1.35) * (floating ? 0.028 : 0.01),
-      -1.36 - topView * 0.32 + Math.sin(elapsed * 1.9) * (floating ? 0.026 : 0.01) + exit * 0.18,
-      -5.55 - topView * 0.72 - charge * 0.46 - jump * 1.12 + exit * 0.94
+      -1.02 - topView * 0.2 + Math.sin(elapsed * 1.9) * (floating ? 0.026 : 0.01) + exit * 0.18,
+      -5.9 - topView * 0.38 - charge * 0.46 - jump * 1.12 + exit * 0.94
     );
     this.localShip.rotation.set(
-      -1.12 - topView * 0.38 - charge * 0.08 + exit * 0.06 + alignBank * 0.08,
-      viewYaw + Math.sin(elapsed * 1.2) * 0.025 * (floating ? 1 : 0.25) + alignBank * 0.26,
+      -Math.PI / 2 - orbitPitch * 0.32 - charge * 0.08 + exit * 0.06 + alignBank * 0.08,
+      -orbitYaw * 0.82 + Math.sin(elapsed * 1.2) * 0.018 * (floating ? 1 : 0.25) + alignBank * 0.26,
       Math.sin(elapsed * 2.1) * 0.035 * (floating ? 1 : 0.18) + alignSpin
     );
 
@@ -1332,83 +1354,116 @@ export class UniverseRenderer {
 
   private makeCameraShip(tint: number) {
     const group = new THREE.Group();
+    group.userData.tint = tint;
+    const hullMaterial = new THREE.MeshStandardMaterial({
+      color: mixHex(COLORS.white, tint, 0.08),
+      roughness: 0.18,
+      metalness: 0.58,
+      emissive: new THREE.Color(tint),
+      emissiveIntensity: 0.08
+    });
+    const underMaterial = new THREE.MeshStandardMaterial({
+      color: mixHex(COLORS.softWhite, tint, 0.18),
+      roughness: 0.24,
+      metalness: 0.52,
+      emissive: new THREE.Color(tint),
+      emissiveIntensity: 0.05
+    });
+    const top = 0.08;
+    const bottom = -0.08;
+    const verts = [
+      0, top, -1.95,
+      -1.62, top, 0.18,
+      -0.52, top, 0.92,
+      0.52, top, 0.92,
+      1.62, top, 0.18,
+      0, bottom, -1.72,
+      -1.38, bottom, 0.14,
+      -0.44, bottom, 0.78,
+      0.44, bottom, 0.78,
+      1.38, bottom, 0.14
+    ];
+    const indices = [
+      0, 1, 2, 0, 2, 3, 0, 3, 4,
+      5, 7, 6, 5, 8, 7, 5, 9, 8,
+      0, 5, 6, 0, 6, 1,
+      1, 6, 7, 1, 7, 2,
+      2, 7, 8, 2, 8, 3,
+      3, 8, 9, 3, 9, 4,
+      4, 9, 5, 4, 5, 0
+    ];
+    const hullGeometry = new THREE.BufferGeometry();
+    hullGeometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    hullGeometry.setIndex(indices);
+    hullGeometry.computeVertexNormals();
     const hull = new THREE.Mesh(
-      new THREE.ConeGeometry(0.32, 0.96, 6, 1),
-      new THREE.MeshStandardMaterial({
-        color: mixHex(tint, COLORS.white, 0.42),
-        roughness: 0.22,
-        metalness: 0.52,
-        emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.12
-      })
+      hullGeometry,
+      hullMaterial
     );
-    hull.rotation.x = -Math.PI / 2;
-    hull.position.z = -1.08;
 
     const body = new THREE.Mesh(
-      new THREE.SphereGeometry(0.34, 28, 16),
-      new THREE.MeshStandardMaterial({
-        color: 0x15243a,
-        roughness: 0.26,
-        metalness: 0.32,
-        emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.12
-      })
+      new THREE.BoxGeometry(0.74, 0.46, 1.05, 1, 1, 1),
+      underMaterial
     );
-    body.scale.set(0.78, 0.34, 1.52);
-    body.position.z = -0.08;
+    body.position.set(0, 0.34, -0.18);
+    body.rotation.x = -0.08;
 
-    const wingGeometry = new THREE.BufferGeometry();
-    wingGeometry.setAttribute(
-      'position',
-      new THREE.Float32BufferAttribute(
-        [
-          -0.12, -0.02, -0.35,
-          -1.2, -0.08, 0.05,
-          -0.28, 0.02, 0.62,
-          0.12, -0.02, -0.35,
-          1.2, -0.08, 0.05,
-          0.28, 0.02, 0.62
-        ],
-        3
-      )
+    const tailFin = new THREE.Mesh(
+      new THREE.BoxGeometry(0.46, 0.72, 0.34, 1, 1, 1),
+      underMaterial
     );
-    wingGeometry.computeVertexNormals();
-    const wings = new THREE.Mesh(
-      wingGeometry,
+    tailFin.position.set(0, 0.58, 0.46);
+
+    const bevel = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 0.08, 0.28),
       new THREE.MeshStandardMaterial({
-        color: mixHex(tint, COLORS.black, 0.32),
-        roughness: 0.3,
-        metalness: 0.42,
+        color: mixHex(tint, COLORS.white, 0.45),
+        roughness: 0.16,
+        metalness: 0.6,
         emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.08,
-        side: THREE.DoubleSide
+        emissiveIntensity: 0.18
       })
     );
+    bevel.position.set(0, 0.12, 0.76);
 
     const canopy = new THREE.Mesh(
-      new THREE.SphereGeometry(0.2, 20, 12),
+      new THREE.SphereGeometry(0.26, 32, 16),
       new THREE.MeshStandardMaterial({
         color: COLORS.softWhite,
         roughness: 0.06,
         metalness: 0.1,
-        emissive: new THREE.Color(COLORS.cyan),
-        emissiveIntensity: 0.22,
+        emissive: new THREE.Color(tint),
+        emissiveIntensity: 0.2,
         transparent: true,
-        opacity: 0.86
+        opacity: 0.9
       })
     );
-    canopy.scale.set(0.74, 0.32, 1);
-    canopy.position.set(0, 0.18, -0.44);
+    canopy.scale.set(1.2, 0.34, 0.72);
+    canopy.position.set(0, 0.66, -0.76);
+
+    const halo = this.torus(1.84, 0.036, COLORS.white, 0.9);
+    halo.rotation.x = Math.PI / 2;
+    halo.scale.z = 0.58;
+    halo.position.y = 0.07;
+    halo.userData.spinZ = 0.08;
+    const haloTint = this.torus(1.88, 0.014, tint, 0.36);
+    haloTint.rotation.x = Math.PI / 2;
+    haloTint.scale.z = 0.58;
+    haloTint.position.y = 0.07;
+    haloTint.userData.spinZ = -0.05;
 
     const engine = this.spriteGlow(tint, 1.35, 0.52);
-    engine.position.z = 1.05;
+    engine.position.set(0, 0.12, 1.1);
     group.userData.engine = engine;
-    const aura = this.spriteGlow(tint, 2.4, 0.08);
-    aura.position.z = 0.9;
+    const engineLeft = this.spriteGlow(tint, 0.78, 0.42);
+    engineLeft.position.set(-0.45, 0.08, 0.95);
+    const engineRight = this.spriteGlow(tint, 0.78, 0.42);
+    engineRight.position.set(0.45, 0.08, 0.95);
+    const aura = this.spriteGlow(tint, 2.9, 0.08);
+    aura.position.set(0, 0.08, 0.9);
     group.userData.aura = aura;
-    group.add(aura, engine, hull, body, wings, canopy);
-    group.scale.setScalar(0.72);
+    group.add(aura, halo, haloTint, engine, engineLeft, engineRight, hull, body, tailFin, bevel, canopy);
+    group.scale.setScalar(0.82);
     return group;
   }
 
@@ -1505,6 +1560,11 @@ export class UniverseRenderer {
 
     for (const pilot of state.remotePlayers.values()) {
       let group = this.remoteGroups.get(pilot.id);
+      if (group && group.userData.tint !== (pilot.color || COLORS.cyan)) {
+        group.removeFromParent();
+        this.remoteGroups.delete(pilot.id);
+        group = undefined;
+      }
       if (!group) {
         group = this.makeRemoteShip(pilot);
         this.remoteGroups.set(pilot.id, group);
@@ -1544,75 +1604,20 @@ export class UniverseRenderer {
   }
 
   private makeRemoteShip(pilot: RemotePlayerState) {
-    const group = new THREE.Group();
     const tint = pilot.color || COLORS.cyan;
-    const hull = new THREE.Mesh(
-      new THREE.ConeGeometry(0.42, 1.85, 5, 1),
-      new THREE.MeshStandardMaterial({
-        color: mixHex(tint, COLORS.white, 0.3),
-        roughness: 0.24,
-        metalness: 0.42,
-        emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.2
-      })
-    );
-    hull.rotation.x = Math.PI / 2;
-    hull.position.z = 0.16;
-
-    const canopy = new THREE.Mesh(
-      new THREE.SphereGeometry(0.23, 18, 10),
-      new THREE.MeshStandardMaterial({
-        color: COLORS.softWhite,
-        roughness: 0.08,
-        metalness: 0.1,
-        emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.18
-      })
-    );
-    canopy.scale.set(0.72, 0.42, 1);
-    canopy.position.set(0, 0.16, 0.2);
-
-    const wingGeometry = new THREE.BufferGeometry();
-    wingGeometry.setAttribute(
-      'position',
-      new THREE.Float32BufferAttribute(
-        [
-          -0.16, -0.04, -0.42,
-          -1.15, -0.08, -0.96,
-          -0.25, -0.02, 0.18,
-          0.16, -0.04, -0.42,
-          1.15, -0.08, -0.96,
-          0.25, -0.02, 0.18
-        ],
-        3
-      )
-    );
-    wingGeometry.computeVertexNormals();
-    const wings = new THREE.Mesh(
-      wingGeometry,
-      new THREE.MeshStandardMaterial({
-        color: mixHex(tint, COLORS.black, 0.2),
-        roughness: 0.32,
-        metalness: 0.35,
-        emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.12,
-        side: THREE.DoubleSide
-      })
-    );
-
-    const engine = this.spriteGlow(tint, 1.55, 0.55);
-    engine.position.z = -1.06;
-    group.userData.engine = engine;
+    const group = this.makeCameraShip(tint);
+    group.userData.tint = tint;
+    group.scale.setScalar(1);
 
     const label = createLabelSprite(pilot.name || 'Friend', tint);
-    label.position.y = 1.9;
+    label.position.y = 2.2;
     label.scale.multiplyScalar(0.42);
     group.userData.label = label;
 
-    const ring = this.trackMarker(1.8, tint);
+    const ring = this.trackMarker(2.2, tint);
     ring.rotation.x = Math.PI / 2;
     ring.scale.y = 0.62;
-    group.add(engine, hull, wings, canopy, ring, label);
+    group.add(ring, label);
     return group;
   }
 
