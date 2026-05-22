@@ -87,7 +87,58 @@ function createPlanetTexture(kind: SpaceObject['kind'], baseHex: number, seed: n
       ctx.fillStyle = `#${dark.getHexString()}`;
       ctx.fillRect(0, 0, 768, 384);
 
-      if (kind === 'Gas Giant' || kind === 'Storm Planet' || kind === 'Ringed Giant' || kind === 'Mega Ringed Giant' || kind === 'Diamond Rain Planet' || kind === 'Iron Storm World') {
+      if (seed === 700102) {
+        const ocean = ctx.createLinearGradient(0, 0, 768, 384);
+        ocean.addColorStop(0, '#164fa8');
+        ocean.addColorStop(0.5, '#1d7edb');
+        ocean.addColorStop(1, '#082f76');
+        ctx.fillStyle = ocean;
+        ctx.fillRect(0, 0, 768, 384);
+
+        const drawContinent = (cx: number, cy: number, sx: number, sy: number, hue: string) => {
+          ctx.fillStyle = hue;
+          ctx.beginPath();
+          for (let i = 0; i < 34; i += 1) {
+            const a = (i / 34) * Math.PI * 2;
+            const wobble = 0.72 + Math.sin(i * 1.73 + seed * 0.01) * 0.16 + Math.sin(i * 3.41) * 0.12;
+            const x = cx + Math.cos(a) * sx * wobble;
+            const y = cy + Math.sin(a) * sy * wobble;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          ctx.fill();
+        };
+
+        drawContinent(175, 150, 78, 70, '#3c9d55');
+        drawContinent(240, 220, 52, 86, '#74a64c');
+        drawContinent(390, 155, 112, 62, '#5aa34e');
+        drawContinent(470, 235, 44, 54, '#b49d61');
+        drawContinent(610, 150, 86, 78, '#4fa85a');
+        drawContinent(690, 225, 46, 62, '#8bb85d');
+
+        ctx.globalCompositeOperation = 'screen';
+        ctx.fillStyle = 'rgba(250, 255, 255, 0.82)';
+        ctx.beginPath();
+        ctx.ellipse(384, 22, 360, 24, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(384, 362, 370, 26, 0, 0, Math.PI * 2);
+        ctx.fill();
+        for (let cloud = 0; cloud < 95; cloud += 1) {
+          const x = rand() * 768;
+          const y = 34 + rand() * 316;
+          ctx.strokeStyle = `rgba(245, 250, 255, ${0.07 + rand() * 0.13})`;
+          ctx.lineWidth = 2 + rand() * 8;
+          ctx.beginPath();
+          ctx.moveTo(x - 54, y);
+          for (let k = 0; k < 5; k += 1) {
+            ctx.quadraticCurveTo(x - 36 + k * 23, y + Math.sin(k + seed) * 7, x - 18 + k * 26, y + Math.cos(k * 1.8) * 6);
+          }
+          ctx.stroke();
+        }
+        ctx.globalCompositeOperation = 'source-over';
+      } else if (kind === 'Gas Giant' || kind === 'Storm Planet' || kind === 'Ringed Giant' || kind === 'Mega Ringed Giant' || kind === 'Diamond Rain Planet' || kind === 'Iron Storm World') {
         for (let y = 0; y < 384; y += 1) {
           const band = 0.5 + 0.5 * Math.sin(y * 0.055 + seed * 0.02) + 0.22 * Math.sin(y * 0.16 + seed);
           const c = base.clone().lerp(light, Math.max(0, Math.min(1, band * 0.62 + rand() * 0.18)));
@@ -774,14 +825,40 @@ function makeParticleTidalBridge(size: number, leftTint: number, rightTint: numb
 
 function makeMergedGalaxyRemnant(size: number, tint: number, seed: number) {
   const group = new THREE.Group();
-  const disc = makeVolumetricGalaxyDisc(size * 1.35, mixHex(tint, COLORS.gold, 0.38), seed + 1, 7, 7200, 0.44);
-  disc.scale.x = 1.45;
-  disc.scale.y = 0.72;
-  const veil = makeVolumetricGalaxyDisc(size * 1.05, mixHex(tint, COLORS.cyan, 0.2), seed + 2, 5, 3600, 0.36);
-  veil.rotation.z = 0.38;
-  veil.scale.set(1.1, 0.52, 0.5);
-  group.add(makeGlowSprite(mixHex(tint, COLORS.gold, 0.42), size * 11.5, 0.2), disc, veil);
-  group.add(makeParticleTidalBridge(size * 2.4, COLORS.cyan, COLORS.gold, seed + 3, 3200));
+  const rand = seeded(seed + 80);
+  const warm = mixHex(tint, COLORS.gold, 0.42);
+  const pearl = mixHex(COLORS.softWhite, warm, 0.28);
+  const disc = makeVolumetricGalaxyDisc(size * 1.62, warm, seed + 1, 8, 9800, 0.36);
+  disc.scale.set(1.72, 0.62, 0.5);
+  const blueVeil = makeVolumetricGalaxyDisc(size * 1.18, mixHex(tint, COLORS.cyan, 0.34), seed + 2, 6, 5200, 0.28);
+  blueVeil.rotation.z = 0.46;
+  blueVeil.scale.set(1.28, 0.46, 0.42);
+  const halo = makeVolumetricGalaxyDisc(size * 1.96, pearl, seed + 5, 10, 6200, 0.24);
+  halo.rotation.z = -0.12;
+  halo.scale.set(1.92, 0.34, 0.34);
+  group.add(makeGlowSprite(warm, size * 14.5, 0.21), makeGlowSprite(COLORS.softWhite, size * 5.2, 0.11), disc, blueVeil, halo);
+  for (let i = 0; i < 7; i += 1) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(size * (0.52 + i * 0.24), Math.max(0.018, size * 0.004), 8, 160),
+      new THREE.MeshBasicMaterial({
+        color: i % 2 ? pearl : warm,
+        transparent: true,
+        opacity: 0.18 - i * 0.014,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    ring.scale.set(2.45 + i * 0.08, 0.38 + i * 0.02, 0.22);
+    ring.rotation.z = i * 0.13 + rand() * 0.1;
+    group.add(ring);
+  }
+  const northTail = makeParticleTidalBridge(size * 2.7, COLORS.cyan, COLORS.gold, seed + 3, 3900);
+  northTail.rotation.z = 0.18;
+  northTail.scale.y = 0.72;
+  const southTail = makeParticleTidalBridge(size * 2.45, COLORS.gold, COLORS.cyan, seed + 4, 3200);
+  southTail.rotation.z = Math.PI + 0.42;
+  southTail.scale.y = 0.5;
+  group.add(northTail, southTail);
   return group;
 }
 
@@ -1192,28 +1269,31 @@ export class UniverseRenderer {
     const jump = phase === 'jump' ? smoothstep(state.warp.timer / 3.2) : 0;
     const exit = phase === 'exit' ? smoothstep(state.warp.timer / 1.15) : 0;
     const floating = !state.warp.active;
+    const alignSpin = phase === 'align' ? (1 - align) * Math.PI * 4.4 : 0;
+    const alignBank = phase === 'align' ? Math.sin(align * Math.PI) * 0.76 : 0;
 
     this.localShip.position.set(
-      Math.sin(elapsed * 1.35) * (floating ? 0.035 : 0.015),
-      -1.18 + Math.sin(elapsed * 1.9) * (floating ? 0.045 : 0.018) + exit * 0.18,
-      -4.35 - charge * 0.38 - jump * 1.15 + exit * 0.82
+      Math.sin(elapsed * 1.35) * (floating ? 0.035 : 0.012),
+      -0.86 + Math.sin(elapsed * 1.9) * (floating ? 0.038 : 0.014) + exit * 0.16,
+      -4.02 - charge * 0.52 - jump * 1.25 + exit * 0.82
     );
     this.localShip.rotation.set(
-      -0.08 - charge * 0.12 + exit * 0.08,
-      Math.sin(elapsed * 1.2) * 0.025 * (floating ? 1 : 0.35),
-      Math.sin(elapsed * 2.1) * 0.035 * (floating ? 1 : 0.25) + (align - 0.5) * 0.08 * (phase === 'align' ? 1 : 0)
+      -0.36 - charge * 0.1 + exit * 0.08 + alignBank * 0.08,
+      Math.sin(elapsed * 1.2) * 0.025 * (floating ? 1 : 0.25) + alignBank * 0.26,
+      Math.sin(elapsed * 2.1) * 0.035 * (floating ? 1 : 0.18) + alignSpin
     );
 
     const engine = this.localShip.userData.engine as THREE.Sprite | undefined;
     if (engine) {
       const pulse = 1 + Math.sin(elapsed * 10.5) * 0.12;
-      engine.scale.setScalar((1.25 + charge * 2.8 + jump * 1.4 - exit * 1.2) * pulse);
-      (engine.material as THREE.SpriteMaterial).opacity = state.warp.active ? 0.58 + charge * 0.28 : 0.5;
+      const alignHeat = phase === 'align' ? 0.42 * align : 0;
+      engine.scale.setScalar((1.18 + alignHeat + charge * 3.8 + jump * 1.6 - exit * 1.2) * pulse);
+      (engine.material as THREE.SpriteMaterial).opacity = state.warp.active ? 0.52 + alignHeat * 0.18 + charge * 0.34 : 0.5;
     }
     const aura = this.localShip.userData.aura as THREE.Sprite | undefined;
     if (aura) {
-      aura.scale.setScalar(2.4 + charge * 5.5 + jump * 2.8);
-      (aura.material as THREE.SpriteMaterial).opacity = state.warp.active ? 0.16 + charge * 0.24 : 0.08;
+      aura.scale.setScalar(2.2 + align * 0.8 + charge * 6.2 + jump * 2.8);
+      (aura.material as THREE.SpriteMaterial).opacity = state.warp.active ? 0.12 + align * 0.07 + charge * 0.28 : 0.08;
     }
   }
 
@@ -1969,7 +2049,7 @@ export class UniverseRenderer {
       plane.add(makeParticleCloud(2100, size * 4.4, tint, seed + 13, 0.44, 0.08));
       plane.add(makeParticleCloud(1500, size * 3.2, COLORS.gold, seed + 113, 0.34, 0.065));
       group.add(this.spriteGlow(COLORS.purple, size * 9.8, 0.28), this.spriteGlow(COLORS.gold, size * 7.6, 0.16), plane);
-      this.addShockRings(group, 9, size * 1.0, size * 0.42, tint, 0.24, 0.5);
+      group.add(makeParticleCloud(1200, size * 5.8, mixHex(tint, COLORS.white, 0.32), seed + 213, 0.16, 0.055));
       return group;
     }
 
@@ -2015,6 +2095,18 @@ export class UniverseRenderer {
     const seed = this.eventSeed(event);
     const group = new THREE.Group();
     if (event.phase === 'aftermath' && hasPersistentAftermath(kind)) return this.makeAftermathPhenomenon(event, size);
+
+    if (kind === 'Solar System') {
+      const sun = new THREE.Mesh(new THREE.SphereGeometry(size * 0.42, 56, 28), makeStarSurfaceMaterial(COLORS.yellow, seed));
+      group.add(this.spriteGlow(COLORS.yellow, size * 6.8, 0.28), this.spriteGlow(COLORS.gold, size * 10.2, 0.1), sun);
+      for (let i = 0; i < 8; i += 1) {
+        const ring = this.torus(size * (0.85 + i * 0.28), Math.max(0.008, size * 0.002), i === 2 ? COLORS.cyan : mixHex(COLORS.gold, COLORS.white, 0.1), i === 2 ? 0.36 : 0.16);
+        ring.rotation.x = Math.PI / 2;
+        ring.scale.y = 0.46;
+        group.add(ring);
+      }
+      return group;
+    }
 
     if (kind === 'Heart Supernova') {
       const heart = makeHeartMesh(tint, size * 1.95);
@@ -2862,12 +2954,16 @@ class CinematicDirector {
     infall.add(makeParticleCloud(isSupermassive ? 3300 : 2300, isSupermassive ? 54 : 42, tint, seed + 304, 0.32, 0.14));
     this.addStage(infall, 0.3, 0.88, 0.42, 1.62);
 
-    if (isQuasar) {
+    if (isQuasar || isSupermassive) {
       const jets = new THREE.Group();
-      jets.add(this.cinematicBeam(128, 0.88, COLORS.cyan, 0.4));
-      jets.add(this.cinematicBeam(130, 0.24, COLORS.white, 0.58));
-      jets.add(makeParticleCloud(1300, 30, COLORS.cyan, seed + 305, 0.22, 0.15));
-      this.addStage(jets, 0.38, 1.16, 0.2, 1.16);
+      jets.add(this.cinematicBeam(isSupermassive ? 148 : 128, isSupermassive ? 1.04 : 0.88, COLORS.cyan, isSupermassive ? 0.34 : 0.4));
+      jets.add(this.cinematicBeam(isSupermassive ? 150 : 130, isSupermassive ? 0.22 : 0.24, COLORS.white, 0.58));
+      const counterJet = this.cinematicBeam(isSupermassive ? 142 : 122, isSupermassive ? 0.32 : 0.2, mixHex(tint, COLORS.cyan, 0.44), 0.25);
+      counterJet.rotation.z = Math.PI / 2;
+      jets.add(counterJet);
+      jets.add(makeParticleCloud(isSupermassive ? 2400 : 1300, isSupermassive ? 42 : 30, COLORS.cyan, seed + 305, 0.22, 0.15));
+      jets.add(this.ringSet(COLORS.white, isSupermassive ? 18 : 10, isSupermassive ? 10 : 7.5, 2.8, 0.25, 0.52));
+      this.addStage(jets, 0.36, 1.16, 0.18, isSupermassive ? 1.36 : 1.16);
     }
 
     const scar = new THREE.Group();
@@ -2950,10 +3046,9 @@ class CinematicDirector {
     const starA = this.dancer(this.pulse(this.luminousCore(3.3, COLORS.cyan, 0.96), 0, 0.62, 0.08, 13), 0, 0.58, 25, 4.2, 7.8, -1, 0.46);
     const starB = this.dancer(this.pulse(this.luminousCore(3.05, COLORS.softWhite, 0.94), 0, 0.58, 0.07, 12), 0, 0.58, 25, 4.2, 7.8, 1, 0.46);
     inspiral.add(this.cinematicGlow(COLORS.cyan, 86, 0.2), this.cinematicGlow(COLORS.gold, 54, 0.08), starA, starB);
-    inspiral.add(makeLoopField(28, 32, COLORS.cyan, seed + 431, 0.46));
-    inspiral.add(this.ringSet(COLORS.softWhite, 18, 7, 1.8, 0.34, 0.48));
-    inspiral.add(makeVolumetricGalaxyDisc(24, COLORS.cyan, seed + 437, 5, 2400, 0.16));
-    inspiral.add(makeParticleCloud(2100, 38, tint, seed + 438, 0.32, 0.11));
+    inspiral.add(makeVolumetricGalaxyDisc(24, mixHex(COLORS.cyan, COLORS.white, 0.26), seed + 437, 5, 3000, 0.13));
+    inspiral.add(makeParticleCloud(3600, 40, tint, seed + 438, 0.26, 0.075));
+    inspiral.add(makeParticleCloud(1100, 30, COLORS.softWhite, seed + 531, 0.18, 0.06));
     this.addStage(inspiral, 0, 0.64, 1.08, 0.62);
 
     const merger = new THREE.Group();
@@ -2969,7 +3064,7 @@ class CinematicDirector {
     remnant.add(makeVolumetricGalaxyDisc(48, mixHex(COLORS.purple, COLORS.white, 0.18), seed + 435, 7, 6200, 0.28));
     remnant.add(makeParticleCloud(5400, 62, COLORS.purple, seed + 436, 0.56, 0.12));
     remnant.add(makeParticleCloud(2200, 48, COLORS.gold, seed + 439, 0.42, 0.09));
-    remnant.add(this.ringSet(tint, 18, 10, 2.05, 0.36, 0.5));
+    remnant.add(makeParticleCloud(2200, 76, mixHex(tint, COLORS.white, 0.36), seed + 532, 0.18, 0.055));
     this.addStage(remnant, 0.64, 1.22, 0.68, 1.08);
   }
 

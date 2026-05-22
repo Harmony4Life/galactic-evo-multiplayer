@@ -734,7 +734,7 @@ export class GameState {
     this.selectedTarget = destination;
     destination.discovered = true;
     this.closeMenus();
-    this.setMessage(`Aligning for warp to ${destination.name}. Engines charging.`, 2.8);
+    this.setMessage(`Alignment lock: rotating ship toward ${destination.name}.`, 2.8);
     if (shouldGroupWarp) {
       this.multiplayerHooks.onGroupWarpStart?.({
         x: end.x,
@@ -767,7 +767,7 @@ export class GameState {
     this.trackedTarget = null;
     this.selectedTarget = null;
     this.closeMenus();
-    this.setMessage(`Aligning for warp to ${name}. Engines charging.`, 2.8);
+    this.setMessage(`Alignment lock: rotating ship toward ${name}.`, 2.8);
   }
 
   requestWarpToRemote(pilot: RemotePlayerState) {
@@ -1153,6 +1153,7 @@ export class GameState {
         this.warp.timer = 0;
         this.player.yaw = this.warp.alignEndYaw;
         this.player.pitch = this.warp.alignEndPitch;
+        this.setMessage(`Aligned. Ignition charging for ${this.warp.destinationName}.`, 3);
       }
       return;
     }
@@ -1164,6 +1165,7 @@ export class GameState {
         this.warp.phase = 'jump';
         this.warp.timer = 0;
         this.warp.start = copyVec(this.player.position);
+        this.setMessage(`Warp ignition: launching to ${this.warp.destinationName}.`, 2.6);
       }
       return;
     }
@@ -1400,7 +1402,7 @@ export class GameState {
         }
 
         for (const anchor of anchors) {
-          if (event.kind === 'Heart Supernova' && anchor.name === "Zahra's Resonance") continue;
+          if (event.kind === 'Heart Supernova' && (anchor.name === "Zahra's Resonance" || anchor.systemName === "Zahra's Resonance")) continue;
           const desired =
             anchor.kind === 'Star System'
               ? Math.max(62000, ownSpacing * 0.78)
@@ -1450,14 +1452,14 @@ export class GameState {
       moons?: number;
       description: string;
     }> = [
-      { name: 'Mercury', kind: 'Rocky Planet', radius: 38, orbit: 1050, speed: 0.0018, color: 0xa89c91, description: 'A cratered iron-rich world close to the Sun.' },
-      { name: 'Venus', kind: 'Storm Planet', radius: 70, orbit: 1680, speed: 0.00132, color: 0xd9a260, description: 'A bright cloud-wrapped furnace with crushing atmosphere.' },
-      { name: 'Earth', kind: 'Ocean World', radius: 74, orbit: 2360, speed: 0.00108, color: 0x3b8dff, moons: 1, description: 'A blue living world with oceans, clouds, continents, and one pale Moon.' },
-      { name: 'Mars', kind: 'Desert Planet', radius: 55, orbit: 3180, speed: 0.00086, color: 0xc9633d, moons: 2, description: 'A cold rust-red desert world with ancient valleys and polar ice.' },
-      { name: 'Jupiter', kind: 'Gas Giant', radius: 154, orbit: 4620, speed: 0.00048, color: 0xd48a4d, moons: 5, description: 'The largest planet, banded with storms and crowned by a great red vortex.' },
-      { name: 'Saturn', kind: 'Mega Ringed Giant', radius: 136, orbit: 6350, speed: 0.00038, color: 0xd8bd72, rings: true, moons: 6, description: 'A golden giant encircled by a spectacular system of rings.' },
-      { name: 'Uranus', kind: 'Ice World', radius: 112, orbit: 8120, speed: 0.00029, color: 0x78d8dd, rings: true, moons: 4, description: 'A pale tilted ice giant moving with quiet blue-green light.' },
-      { name: 'Neptune', kind: 'Storm Planet', radius: 108, orbit: 9800, speed: 0.00024, color: 0x355dff, moons: 4, description: 'A deep blue ice giant with supersonic winds and distant storms.' }
+      { name: 'Mercury', kind: 'Rocky Planet', radius: 38, orbit: 1700, speed: 0.0018, color: 0xa89c91, description: 'A cratered iron-rich world close to the Sun.' },
+      { name: 'Venus', kind: 'Storm Planet', radius: 70, orbit: 2950, speed: 0.00132, color: 0xd9a260, description: 'A bright cloud-wrapped furnace with crushing atmosphere.' },
+      { name: 'Earth', kind: 'Ocean World', radius: 74, orbit: 4450, speed: 0.00108, color: 0x2f82ff, moons: 1, description: 'A living blue-green world with oceans, clouds, continents, polar ice, and one pale Moon.' },
+      { name: 'Mars', kind: 'Desert Planet', radius: 55, orbit: 6350, speed: 0.00086, color: 0xc9633d, moons: 2, description: 'A cold rust-red desert world with ancient valleys and polar ice.' },
+      { name: 'Jupiter', kind: 'Gas Giant', radius: 154, orbit: 9300, speed: 0.00048, color: 0xd48a4d, moons: 5, description: 'The largest planet, banded with storms and crowned by a great red vortex.' },
+      { name: 'Saturn', kind: 'Mega Ringed Giant', radius: 136, orbit: 13200, speed: 0.00038, color: 0xd8bd72, rings: true, moons: 6, description: 'A golden giant encircled by a spectacular system of rings.' },
+      { name: 'Uranus', kind: 'Ice World', radius: 112, orbit: 17300, speed: 0.00029, color: 0x78d8dd, rings: true, moons: 4, description: 'A pale tilted ice giant moving with quiet blue-green light.' },
+      { name: 'Neptune', kind: 'Storm Planet', radius: 108, orbit: 21800, speed: 0.00024, color: 0x355dff, moons: 4, description: 'A deep blue ice giant with supersonic winds and distant storms.' }
     ];
 
     for (let i = 0; i < planets.length; i += 1) {
@@ -1494,8 +1496,8 @@ export class GameState {
     this.createEvent({
       name: 'Solar System',
       kind: 'Solar System',
-      position: { x: x + 13500, y: y + 900, z: z - 9800 },
-      radius: 1500,
+      position: { x, y, z },
+      radius: 2300,
       color: COLORS.yellow,
       description: 'A navigation entry for our solar system. A dedicated world event will be added here soon.',
       aftermath: 'The solar system remains steady, waiting for its future event.',
@@ -1945,9 +1947,9 @@ export class GameState {
   }
 
   private createZahrasResonance() {
-    const x = 430000;
-    const y = 24000;
-    const z = -365000;
+    const x = 1540000;
+    const y = 68000;
+    const z = -1520000;
     const star = this.createObject({
       name: "Zahra's Resonance",
       kind: 'Star System',
@@ -2018,9 +2020,9 @@ export class GameState {
       name: 'My Love For You',
       kind: 'Heart Supernova',
       position: {
-        x: zr.position.x + 26500,
+        x: zr.position.x + 28500,
         y: zr.position.y + 5200,
-        z: zr.position.z - 21800
+        z: zr.position.z - 24500
       },
       radius: 1700,
       color: 0xff5fbe,
