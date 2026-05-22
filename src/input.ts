@@ -87,6 +87,7 @@ export class InputController {
     this.canvas.addEventListener('pointerdown', (event) => {
       if (document.pointerLockElement === this.canvas) return;
       if (event.button !== 0) return;
+      if (this.state.warp.active) return;
       if (this.hud.isPointerBlocked() || this.state.fullMapOpen || this.state.trackerOpen || this.state.eventMenuOpen || this.state.specialMenuOpen) return;
       this.cameraDragActive = true;
       this.cameraDragMoved = false;
@@ -97,7 +98,7 @@ export class InputController {
     });
 
     this.canvas.addEventListener('pointermove', (event) => {
-      if (!this.cameraDragActive || document.pointerLockElement === this.canvas || event.pointerId !== this.dragPointerId) return;
+      if (!this.cameraDragActive || this.state.warp.active || document.pointerLockElement === this.canvas || event.pointerId !== this.dragPointerId) return;
       const dx = event.clientX - this.dragLastX;
       const dy = event.clientY - this.dragLastY;
       this.dragLastX = event.clientX;

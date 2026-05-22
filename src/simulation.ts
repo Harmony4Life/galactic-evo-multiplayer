@@ -842,6 +842,8 @@ export class GameState {
     groupWarp: boolean;
     companionId: string | null;
   }) {
+    this.player.cameraYawOffset = 0;
+    this.player.cameraPitchOffset = 0;
     const aim = angleToPoint(this.player.position, input.focus);
     this.warp.active = true;
     this.warp.phase = 'align';
