@@ -41,9 +41,11 @@
       </div>
       <div id="scanPanel" class="scan-panel hidden"></div>
       <div id="menuPanel" class="menu-panel hidden"></div>
-      <canvas id="miniMap" class="mini-map" width="260" height="260"></canvas>
+      <div id="miniMapWrap" class="mini-map-wrap">
+        <canvas id="miniMap" width="260" height="260"></canvas>
+        <button id="miniMapClose" class="mini-map-close" type="button" aria-label="Close mini map">×</button>
+      </div>
       <div id="fullMapWrap" class="full-map-wrap hidden">
-        <button id="fullMapClose" class="full-map-close" type="button" aria-label="Close universe map">Close</button>
         <canvas id="fullMap" width="1200" height="760"></canvas>
       </div>
       <div id="cinematicOverlay" class="cinematic-overlay hidden">

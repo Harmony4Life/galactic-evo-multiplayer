@@ -2,8 +2,8 @@ export type Vec3 = { x: number; y: number; z: number };
 export type EventPhase = 'dormant' | 'active' | 'aftermath';
 export type TrackerMode = 'nearest' | 'systems';
 
-export const WORLD_SIZE = 470000;
-export const RENDER_DISTANCE = 52000;
+export const WORLD_SIZE = 1250000;
+export const RENDER_DISTANCE = 56000;
 export const WARP_DURATION = 3.2;
 export const SPECIAL_PLANET_DURATION = 12;
 
@@ -88,6 +88,10 @@ export interface WorldEvent {
 }
 
 export type Trackable = SpaceObject | WorldEvent;
+
+export function hasPersistentAftermath(kind: string) {
+  return kind !== 'Made in Heaven' && kind !== 'Wormhole';
+}
 
 export interface PlayerState {
   position: Vec3;
@@ -546,7 +550,7 @@ export class GameState {
     const targets = this.mapTargets();
     const xs = [...targets.map((target) => target.position.x), this.player.position.x];
     const zs = [...targets.map((target) => target.position.z), this.player.position.z];
-    const margin = 26000;
+    const margin = 72000;
     return {
       minX: Math.min(...xs) - margin,
       maxX: Math.max(...xs) + margin,
@@ -606,6 +610,7 @@ export class GameState {
   triggerNearestEvent() {
     const [event] = this.events
       .slice()
+      .filter((item) => item.phase !== 'aftermath' || hasPersistentAftermath(item.kind))
       .sort((a, b) => distance(this.player.position, a.position) - distance(this.player.position, b.position));
     if (!event) return;
     const d = distance(this.player.position, event.position);
@@ -888,11 +893,11 @@ export class GameState {
         ? 25
         : 15;
       if (event.timer > limit && !this.cutscene.active) {
-        event.phase = 'aftermath';
+        event.phase = hasPersistentAftermath(event.kind) ? 'aftermath' : 'dormant';
         event.timer = 0;
-        event.lingering = 1;
+        event.lingering = hasPersistentAftermath(event.kind) ? 1 : 0;
         this.version += 1;
-        this.setMessage(event.aftermath, 8);
+        if (hasPersistentAftermath(event.kind)) this.setMessage(event.aftermath, 8);
       }
     }
   }
@@ -922,13 +927,25 @@ export class GameState {
       this.player.yaw = Math.atan2(destination.position.x - this.player.position.x, destination.position.z - this.player.position.z);
       this.player.pitch = 0;
       this.setMessage(`The wormhole ejects you near ${destination.name}.`, 7);
+      event.phase = 'dormant';
+      event.timer = 0;
+      event.lingering = 0;
+      this.version += 1;
+      return;
     }
 
-    event.phase = 'aftermath';
-    event.timer = 0;
-    event.lingering = 1;
-    this.version += 1;
-    this.setMessage(event.aftermath, 8);
+    if (hasPersistentAftermath(event.kind)) {
+      event.phase = 'aftermath';
+      event.timer = 0;
+      event.lingering = 1;
+      this.version += 1;
+      this.setMessage(event.aftermath, 8);
+    } else {
+      event.phase = 'dormant';
+      event.timer = 0;
+      event.lingering = 0;
+      this.version += 1;
+    }
   }
 
   private updateWarp(dt: number) {
@@ -1000,7 +1017,7 @@ export class GameState {
 
     this.systems.push(star);
 
-    let orbitRadius = 1120 + this.rng.int(-90, 120);
+    let orbitRadius = 1420 + this.rng.int(-120, 180);
     for (let i = 0; i < planetCount; i += 1) {
       const angle = this.rng.range(0, Math.PI * 2);
       const kind = this.rng.choice(planetKinds);
@@ -1030,7 +1047,7 @@ export class GameState {
         heartShape: false,
         heartStar: false
       });
-      orbitRadius += this.rng.int(980, 1650) + Math.max(0, radius - 95) * 3.2;
+      orbitRadius += this.rng.int(1350, 2300) + Math.max(0, radius - 95) * 4.8;
     }
 
     return star;
@@ -1048,7 +1065,7 @@ export class GameState {
   }
 
   private separateStarSystems() {
-    for (let iteration = 0; iteration < 6; iteration += 1) {
+    for (let iteration = 0; iteration < 9; iteration += 1) {
       for (let i = 0; i < this.systems.length; i += 1) {
         for (let j = i + 1; j < this.systems.length; j += 1) {
           const a = this.systems[i];
@@ -1056,8 +1073,7 @@ export class GameState {
           let dx = b.position.x - a.position.x;
           let dz = b.position.z - a.position.z;
           let d = Math.hypot(dx, dz);
-          const galaxyLocal = a.name.includes('Galaxy') || b.name.includes('Galaxy');
-          const desired = galaxyLocal ? 9200 : 12800;
+          const desired = 52000;
           if (d >= desired) continue;
           if (d < 0.001) {
             const angle = ((i * 37 + j * 53) % 360) * (Math.PI / 180);
@@ -1102,11 +1118,11 @@ export class GameState {
   }
 
   private eventMapSpacing(event: WorldEvent) {
-    if (event.kind === 'Made in Heaven') return 44000;
-    if (['Galaxy Collision', 'Supermassive Black Hole', 'Hypernova', 'Neutron Star Merger'].includes(event.kind)) return 32000;
-    if (event.kind === 'Heart Supernova') return 22000;
-    if (event.kind === 'Wormhole' || event.kind === 'Quasar') return 26000;
-    return 16500;
+    if (event.kind === 'Made in Heaven') return 130000;
+    if (event.kind === 'Wormhole' || event.kind === 'Quasar') return 115000;
+    if (['Galaxy Collision', 'Supermassive Black Hole', 'Hypernova', 'Neutron Star Merger'].includes(event.kind)) return 95000;
+    if (event.kind === 'Heart Supernova') return 76000;
+    return 56000;
   }
 
   private distributeWorldEvents() {
@@ -1115,12 +1131,12 @@ export class GameState {
 
     const made = this.events.find((event) => event.kind === 'Made in Heaven');
     if (made) {
-      made.position.x = 52000;
-      made.position.y = 74000;
-      made.position.z = -46000;
+      made.position.x = 146000;
+      made.position.y = 98000;
+      made.position.z = -138000;
     }
 
-    for (let iteration = 0; iteration < 8; iteration += 1) {
+    for (let iteration = 0; iteration < 14; iteration += 1) {
       for (let i = 0; i < this.events.length; i += 1) {
         const event = this.events[i];
         const ownSpacing = this.eventMapSpacing(event);
@@ -1151,11 +1167,11 @@ export class GameState {
           if (event.kind === 'Heart Supernova' && anchor.name === "Zahra's Resonance") continue;
           const desired =
             anchor.kind === 'Star System'
-              ? Math.max(13000, ownSpacing * 0.58)
+              ? Math.max(38000, ownSpacing * 0.72)
               : anchor.kind === 'Quasar' || anchor.kind === 'Galaxy' || anchor.kind === 'Galaxy Pair'
-                ? Math.max(24000, ownSpacing * 0.72)
-                : 18000;
-          this.pushEventAway(event, anchor.position.x, anchor.position.z, desired, anchor.seed + iteration, 0.72);
+                ? Math.max(62000, ownSpacing * 0.86)
+                : 42000;
+          this.pushEventAway(event, anchor.position.x, anchor.position.z, desired, anchor.seed + iteration, 1.0);
         }
       }
     }
@@ -1171,9 +1187,9 @@ export class GameState {
 
     for (let i = 0; i < names.length; i += 1) {
       const arm = i % (reborn ? 6 : 5);
-      const radius = (reborn ? 16000 : 14000) + i * (reborn ? 10400 : 9800) + this.rng.int(-4600, 4600);
+      const radius = (reborn ? 36000 : 32000) + i * (reborn ? 24500 : 22500) + this.rng.int(-7600, 7600);
       const theta =
-        arm * ((Math.PI * 2) / (reborn ? 6 : 5)) + radius / (reborn ? 14200 : 15000) + this.rng.range(-0.44, 0.44);
+        arm * ((Math.PI * 2) / (reborn ? 6 : 5)) + radius / (reborn ? 28500 : 30000) + this.rng.range(-0.36, 0.36);
       this.createStarSystem(
         names[i],
         Math.cos(theta) * radius,
@@ -1241,26 +1257,6 @@ export class GameState {
       heartShape: false,
       heartStar: false
     });
-    this.createObject({
-      name: 'Quasar Crown',
-      kind: 'Quasar',
-      position: { x: -51500, y: 7200, z: 40000 },
-      radius: 1800,
-      color: COLORS.cyan,
-      description: 'A brilliant active galactic nucleus.',
-      orbitRadius: 0,
-      orbitSpeed: 0,
-      orbitAngle: 0,
-      orbitTilt: 0,
-      rings: false,
-      atmosphere: false,
-      moons: 0,
-      seed: 105,
-      systemName: '',
-      heartShape: false,
-      heartStar: false
-    });
-
     const galaxies = [
       this.makeShowcase('Aurelia Spiral Galaxy', 'Galaxy', 180000, 9000, 210000, 6200, 0x78b4ff, 'A distant spiral galaxy.', 201),
       this.makeShowcase('The Zahra Veil Galaxy', 'Galaxy', -230000, 14000, 195000, 7200, 0xff78c8, 'A rose-colored galaxy.', 202),
@@ -1271,7 +1267,7 @@ export class GameState {
     for (const galaxy of galaxies) {
       for (let j = 0; j < 6; j += 1) {
         const angle = (j * Math.PI * 2) / 6 + this.rng.range(-0.35, 0.35);
-        const r = this.rng.int(11000, 38000);
+        const r = this.rng.int(48000, 112000);
         this.createStarSystem(
           `${galaxy.name} System ${j + 1}`,
           galaxy.position.x + Math.cos(angle) * r,
@@ -1381,7 +1377,7 @@ export class GameState {
     this.createEvent({
       name: 'Quasar Ignition',
       kind: 'Quasar',
-      position: { x: -51500, y: 7200, z: 40000 },
+      position: { x: -214000, y: 46000, z: 154000 },
       radius: 1600,
       color: COLORS.cyan,
       description: 'A supermassive black hole begins feeding.',
@@ -1607,7 +1603,7 @@ export class GameState {
     for (let i = 0; i < lovePlanets.length; i += 1) {
       const [planetName, description] = lovePlanets[i];
       const angle = (i * Math.PI * 2) / lovePlanets.length;
-      const orbitRadius = 1350 + i * 1040;
+      const orbitRadius = 1450 + i * 1300;
       const orbitTilt = 0.045;
       const kind = this.rng.choice(['Crystal Planet', 'Emerald World', 'Ocean World', 'Ringed Giant', 'Diamond Rain Planet'] as const);
       this.createObject({

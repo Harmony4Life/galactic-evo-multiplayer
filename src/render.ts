@@ -7,6 +7,7 @@ import {
   distance,
   forwardVector,
   GameState,
+  hasPersistentAftermath,
   isEvent,
   PlanetKind,
   planetKinds,
@@ -1024,7 +1025,8 @@ export class UniverseRenderer {
       if (!group) continue;
       const rel = subVec(target.position, state.player.position);
       const d = distance(state.player.position, target.position);
-      group.visible = d < state.renderDistance || target === state.trackedTarget || target === state.selectedTarget;
+      const planetViewDistance = !isEvent(target) && PLANET_SET.has(target.kind) ? Math.min(state.renderDistance, 34000) : state.renderDistance;
+      group.visible = d < planetViewDistance || target === state.trackedTarget || target === state.selectedTarget;
       group.position.set(rel.x * RENDER_SCALE, rel.y * RENDER_SCALE, rel.z * RENDER_SCALE);
 
       const spinRate = (group.userData.spinRate as number | undefined) ?? 0.1;
@@ -1608,12 +1610,125 @@ export class UniverseRenderer {
     return group;
   }
 
+  private makeAftermathPhenomenon(event: WorldEvent, size: number) {
+    const kind = event.kind;
+    const tint = event.color;
+    const seed = this.eventSeed(event, 9000);
+    const group = new THREE.Group();
+    group.scale.setScalar(1.22);
+
+    if (kind === 'Heart Supernova') {
+      const heart = makeHeartMesh(tint, size * 2.05);
+      heart.rotation.z = 0.02;
+      const shell = new THREE.Mesh(
+        makePuffedHeartGeometry(size * 2.35, 18, 112, 0.52),
+        new THREE.MeshBasicMaterial({
+          color: mixHex(tint, COLORS.white, 0.28),
+          transparent: true,
+          opacity: 0.16,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        })
+      );
+      const initials = makeCinemaTextSprite('Z + M', COLORS.gold, 600, 220);
+      initials.position.set(0, -size * 0.08, size * 0.62);
+      initials.scale.set(size * 1.9, size * 0.72, 1);
+      (initials.material as THREE.SpriteMaterial).depthTest = false;
+      group.add(this.spriteGlow(tint, size * 11.5, 0.34), this.spriteGlow(COLORS.gold, size * 7.5, 0.14), heart, shell, initials);
+      group.add(makeParticleCloud(900, size * 4.9, tint, seed + 1, 0.58, 0.11));
+      this.addShockRings(group, 10, size * 1.08, size * 0.4, COLORS.gold, 0.4, 0.52);
+      return group;
+    }
+
+    if (kind === 'Galaxy Collision') {
+      group.add(this.spriteGlow(mixHex(tint, COLORS.gold, 0.45), size * 10.5, 0.2));
+      group.add(makeSpiralArms(16, 280, size * 4.9, mixHex(tint, COLORS.white, 0.25), seed + 2, 0.52));
+      group.add(makeSmoothTidalBridge(size * 2.4, COLORS.cyan, COLORS.gold, seed + 3));
+      group.add(makeParticleCloud(1700, size * 4.6, COLORS.gold, seed + 4, 0.36, 0.13));
+      this.addShockRings(group, 12, size * 0.82, size * 0.36, mixHex(tint, COLORS.gold, 0.5), 0.28, 0.38);
+      return group;
+    }
+
+    if (kind === 'Planet Collision') {
+      const molten = this.eventPlanet(size * 0.64, COLORS.orange, seed + 5);
+      group.add(this.spriteGlow(COLORS.red, size * 6.4, 0.24), molten);
+      group.add(makeRadialRays(90, size * 0.28, size * 2.8, COLORS.orange, seed + 6, 0.7, 0.42));
+      group.add(makeDiamondShardField(70, size * 2.2, COLORS.gold, seed + 7, size * 0.026));
+      this.addShockRings(group, 10, size * 0.92, size * 0.26, COLORS.gold, 0.42, 0.48);
+      return group;
+    }
+
+    if (kind === 'Supernova' || kind === 'Hypernova') {
+      const isZahraNova = event.name.toLowerCase().includes('xosupa');
+      const primary = isZahraNova ? COLORS.pink : tint;
+      const accent = kind === 'Hypernova' || isZahraNova ? COLORS.gold : mixHex(tint, COLORS.white, 0.3);
+      group.add(this.spriteGlow(primary, size * (kind === 'Hypernova' ? 14.5 : 11.5), 0.3), this.spriteGlow(accent, size * 8.5, 0.12));
+      group.add(makeSpiralArms(kind === 'Hypernova' ? 13 : 9, 220, size * (kind === 'Hypernova' ? 5.4 : 4.3), accent, seed + 8, 0.42));
+      group.add(makeParticleCloud(kind === 'Hypernova' ? 2000 : 1500, size * 5.4, primary, seed + 9, 0.68, 0.14));
+      this.addShockRings(group, kind === 'Hypernova' ? 16 : 12, size * 0.82, size * 0.42, accent, 0.46, 0.5);
+      if (isZahraNova) group.add(makeHeartParticleField(420, size * 1.75, COLORS.gold, seed + 10, size * 0.026));
+      return group;
+    }
+
+    if (kind.includes('Black Hole') || kind === 'Quasar' || kind === 'Tidal Disruption') {
+      group.add(this.makeBlackHoleLike(size * 1.18, tint, kind === 'Quasar' || kind === 'Supermassive Black Hole'));
+      group.add(this.spriteGlow(COLORS.gold, size * 7.8, 0.13), this.spriteGlow(COLORS.purple, size * 5.4, 0.08));
+      group.add(makeSpiralArms(kind === 'Tidal Disruption' ? 7 : 5, 180, size * 4.2, COLORS.gold, seed + 11, kind === 'Tidal Disruption' ? 0.82 : 0.5));
+      this.addShockRings(group, 12, size * 0.92, size * 0.34, mixHex(tint, COLORS.white, 0.24), 0.3, 0.36);
+      return group;
+    }
+
+    if (kind === 'Neutron Star Merger' || kind === 'Kilonova') {
+      group.add(this.spriteGlow(COLORS.purple, size * 8.4, 0.26), this.spriteGlow(COLORS.gold, size * 6.4, 0.14));
+      group.add(makeSpiralArms(11, 220, size * 4.2, COLORS.gold, seed + 12, 0.48));
+      group.add(makeParticleCloud(1700, size * 4.4, tint, seed + 13, 0.52, 0.14));
+      this.addShockRings(group, 13, size * 0.72, size * 0.36, tint, 0.36, 0.48);
+      return group;
+    }
+
+    if (kind === 'Magnetar' || kind === 'Pulsar') {
+      const core = new THREE.Mesh(new THREE.SphereGeometry(size * 0.36, 42, 20), new THREE.MeshBasicMaterial({ color: COLORS.white, transparent: true, opacity: 0.88, blending: THREE.AdditiveBlending }));
+      group.add(this.spriteGlow(tint, size * 6.2, 0.22), core, makeLoopField(kind === 'Magnetar' ? 26 : 14, size * 2.4, tint, seed + 14, 0.44));
+      group.add(this.beam(size * (kind === 'Pulsar' ? 6.6 : 3.8), size * 0.05, COLORS.cyan, 'x', 0.22));
+      this.addShockRings(group, 10, size * 0.78, size * 0.32, tint, 0.3, 0.52);
+      return group;
+    }
+
+    if (kind === 'Diamond Rain') {
+      group.add(this.spriteGlow(COLORS.cyan, size * 6.2, 0.24), makeDiamondShardField(125, size * 2.9, COLORS.cyan, seed + 15, size * 0.036));
+      group.add(makeParticleCloud(1100, size * 3.6, COLORS.cyan, seed + 16, 0.58, 0.13));
+      this.addShockRings(group, 8, size * 0.78, size * 0.3, COLORS.cyan, 0.34, 0.54);
+      return group;
+    }
+
+    if (kind === 'Planetary Nebula') {
+      group.add(this.spriteGlow(COLORS.pink, size * 5.2, 0.22), this.spriteGlow(COLORS.cyan, size * 5.2, 0.2));
+      group.add(makeLoopField(20, size * 2.8, tint, seed + 17, 0.36), makeParticleCloud(1500, size * 4.5, tint, seed + 18, 0.62, 0.13));
+      return group;
+    }
+
+    if (kind === 'Tidal Lock Eclipse' || kind === 'Atmospheric Escape' || kind === 'Cryovolcanism') {
+      const planet = this.eventPlanet(size * 0.72, tint, seed + 19);
+      group.add(this.spriteGlow(tint, size * 5.0, 0.18), planet);
+      if (kind === 'Atmospheric Escape') group.add(this.makeEventTail(size, COLORS.cyan, seed + 20));
+      if (kind === 'Cryovolcanism') group.add(this.makeCryoPlumes(size, tint, seed + 21));
+      this.addShockRings(group, 7, size * 0.78, size * 0.28, tint, 0.28, 0.5);
+      return group;
+    }
+
+    group.add(this.spriteGlow(tint, size * 7.2, 0.22), makeSpiralArms(8, 170, size * 3.8, tint, seed + 22, 0.44));
+    group.add(makeParticleCloud(1100, size * 3.9, tint, seed + 23, 0.55, 0.13));
+    this.addShockRings(group, 9, size * 0.82, size * 0.34, tint, 0.34, 0.5);
+    return group;
+  }
+
   private makeEventPhenomenon(event: WorldEvent, size: number) {
     const kind = event.kind;
     const tint = event.color;
     const seed = this.eventSeed(event);
     const group = new THREE.Group();
-    if (event.phase === 'aftermath') group.scale.setScalar(1.18);
+    if (event.phase === 'aftermath' && hasPersistentAftermath(kind)) return this.makeAftermathPhenomenon(event, size);
 
     if (kind === 'Heart Supernova') {
       const heart = makeHeartMesh(tint, size * 1.95);
@@ -1797,7 +1912,8 @@ export class UniverseRenderer {
     const group = new THREE.Group();
     const markerSize = Math.max(1.6, Math.min(24, event.radius * 0.009));
     const size = event.kind === 'Galaxy Collision' ? Math.min(9.5, markerSize * 0.42) : event.kind === 'Planet Collision' ? Math.min(7.2, markerSize * 0.56) : markerSize;
-    const name = event.name === 'My Love For You' && !event.discovered ? '???' : event.name;
+    const baseName = event.name === 'My Love For You' && !event.discovered ? '???' : event.name;
+    const name = event.phase === 'aftermath' && hasPersistentAftermath(event.kind) ? `${baseName} Aftermath` : baseName;
     const root = this.makeEventPhenomenon(event, size);
     group.userData.pulseRoot = root;
 

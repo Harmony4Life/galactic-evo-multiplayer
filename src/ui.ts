@@ -18,7 +18,8 @@ function escapeHtml(value: string) {
 }
 
 function displayName(target: Trackable) {
-  return isEvent(target) && target.name === 'My Love For You' && !target.discovered ? '???' : target.name;
+  if (isEvent(target) && target.name === 'My Love For You' && !target.discovered) return '???';
+  return isEvent(target) && target.phase === 'aftermath' ? `${target.name} Aftermath` : target.name;
 }
 
 function displayKind(target: Trackable) {
@@ -31,10 +32,11 @@ export class Hud {
   private messageChip = document.querySelector<HTMLDivElement>('#messageChip')!;
   private scanPanel = document.querySelector<HTMLDivElement>('#scanPanel')!;
   private menuPanel = document.querySelector<HTMLDivElement>('#menuPanel')!;
+  private miniMapWrap = document.querySelector<HTMLDivElement>('#miniMapWrap')!;
   private miniMap = document.querySelector<HTMLCanvasElement>('#miniMap')!;
+  private miniMapClose = document.querySelector<HTMLButtonElement>('#miniMapClose')!;
   private fullMapWrap = document.querySelector<HTMLDivElement>('#fullMapWrap')!;
   private fullMap = document.querySelector<HTMLCanvasElement>('#fullMap')!;
-  private fullMapClose = document.querySelector<HTMLButtonElement>('#fullMapClose')!;
   private cinematicOverlay = document.querySelector<HTMLDivElement>('#cinematicOverlay')!;
   private cinematicTitle = document.querySelector<HTMLDivElement>('.cinematic-title')!;
   private cinematicProgress = document.querySelector<HTMLSpanElement>('.cinematic-progress span')!;
@@ -46,17 +48,18 @@ export class Hud {
 
   constructor(private state: GameState) {
     this.fullMap.addEventListener('pointerdown', (event) => this.onFullMapDown(event));
-    this.fullMapClose.addEventListener('click', () => {
+    this.miniMapClose.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.state.showMinimap = false;
       this.state.fullMapOpen = false;
-      this.state.showMinimap = true;
       this.draggingMap = false;
-      this.state.setMessage('Universe map closed. Minimap restored.', 2.4);
+      this.state.setMessage('Minimap closed. Press M to reopen.', 2.4);
     });
     window.addEventListener('pointermove', (event) => this.onPointerMove(event));
     window.addEventListener('pointerup', () => {
       this.draggingMap = false;
     });
-    this.miniMap.addEventListener('click', () => {
+    this.miniMapWrap.addEventListener('click', () => {
       if (!this.state.cutscene.active && !this.state.warp.active && !this.state.specialScene.active) {
         this.state.fullMapOpen = true;
       }
@@ -188,11 +191,11 @@ export class Hud {
   }
 
   private renderMinimap() {
-    this.miniMap.classList.toggle(
+    this.miniMapWrap.classList.toggle(
       'hidden',
       !this.state.showMinimap || this.state.fullMapOpen || this.state.cutscene.active || this.state.warp.active || this.state.specialScene.active
     );
-    if (this.miniMap.classList.contains('hidden')) return;
+    if (this.miniMapWrap.classList.contains('hidden')) return;
     const ctx = this.miniMap.getContext('2d');
     if (!ctx) return;
     const width = this.miniMap.width;
@@ -337,7 +340,7 @@ export class Hud {
       ctx.fillStyle = '#d2dcf0';
       ctx.font = '12px Inter, Arial';
       ctx.fillText(`${this.mapHover.kind} | ${Math.round(this.mapHover.distance).toLocaleString()}u`, x + 12, y + 48);
-      ctx.fillText('Click to warp/track. Drag empty space to pan. Close button exits.', x + 12, y + 64);
+      ctx.fillText('Click to warp/track. Drag empty space to pan. Press M or Esc to exit.', x + 12, y + 64);
     }
   }
 
