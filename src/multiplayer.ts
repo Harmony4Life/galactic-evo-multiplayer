@@ -414,7 +414,13 @@ export class MultiplayerClient {
       { x: Number(message.destination.x) || 0, y: Number(message.destination.y) || 0, z: Number(message.destination.z) || 0 },
       message.destination.name || 'Squad destination',
       message.destination.color || COLORS.cyan,
-      { fromNetwork: true, groupWarp: true, companionId: message.originId, exactEnd: true }
+      {
+        fromNetwork: true,
+        groupWarp: true,
+        companionId: message.originId,
+        exactEnd: true,
+        duration: Number(message.destination.duration) || undefined
+      }
     );
     this.state.setMessage(`${cleanName(message.name)} initiated squad warp.`, 4);
   }

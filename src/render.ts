@@ -1303,7 +1303,7 @@ export class UniverseRenderer {
     const phase = state.warp.phase;
     const align = phase === 'align' ? smoothstep(state.warp.timer / WARP_ALIGN_DURATION) : 0;
     const charge = phase === 'charge' ? smoothstep(state.warp.timer / WARP_CHARGE_DURATION) : 0;
-    const jump = phase === 'jump' ? smoothstep(state.warp.timer / WARP_DURATION) : 0;
+    const jump = phase === 'jump' ? smoothstep(state.warp.timer / Math.max(WARP_DURATION, state.warp.duration)) : 0;
     const exit = phase === 'exit' ? smoothstep(state.warp.timer / WARP_EXIT_DURATION) : 0;
     const floating = !state.warp.active;
     const alignSpin = phase === 'align' ? (1 - align) * Math.PI * 4.4 : 0;
@@ -3760,14 +3760,18 @@ class CinematicDirector {
 
 class WarpTunnel {
   root = new THREE.Group();
-  private streakCount = 1220;
+  private streakCount = 1680;
+  private shearCount = 520;
   private streaks: THREE.LineSegments;
   private geometry: THREE.BufferGeometry;
+  private shearLines: THREE.LineSegments;
+  private shearGeometry: THREE.BufferGeometry;
   private rings: THREE.Mesh[] = [];
   private ribbons: THREE.Line[] = [];
   private chargeCore: THREE.Sprite;
   private tunnelGlow: THREE.Sprite;
   private companion: THREE.Group;
+  private companionTint = 0;
 
   constructor() {
     const positions = new Float32Array(this.streakCount * 6);
@@ -3783,6 +3787,20 @@ class WarpTunnel {
       })
     );
     this.root.add(this.streaks);
+    const shearPositions = new Float32Array(this.shearCount * 6);
+    this.shearGeometry = new THREE.BufferGeometry();
+    this.shearGeometry.setAttribute('position', new THREE.BufferAttribute(shearPositions, 3));
+    this.shearLines = new THREE.LineSegments(
+      this.shearGeometry,
+      new THREE.LineBasicMaterial({
+        color: COLORS.softWhite,
+        transparent: true,
+        opacity: 0.42,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    this.root.add(this.shearLines);
     this.chargeCore = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: createGlowTexture(991, COLORS.cyan),
@@ -3808,24 +3826,24 @@ class WarpTunnel {
     this.tunnelGlow.position.z = 54;
     this.tunnelGlow.scale.set(38, 38, 1);
     this.root.add(this.tunnelGlow);
-    for (let i = 0; i < 30; i += 1) {
+    for (let i = 0; i < 44; i += 1) {
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(2.4 + i * 0.52, 0.02 + (i % 4) * 0.004, 8, 128),
+        new THREE.TorusGeometry(2.2 + i * 0.42, 0.018 + (i % 5) * 0.003, 8, 144),
         new THREE.MeshBasicMaterial({ color: i % 3 === 0 ? COLORS.cyan : i % 2 ? COLORS.blue : COLORS.purple, transparent: true, opacity: 0.24, blending: THREE.AdditiveBlending, depthWrite: false })
       );
-      ring.position.z = 8 + i * 5.4;
+      ring.position.z = 7 + i * 4.15;
       ring.rotation.x = i * 0.018;
       this.rings.push(ring);
       this.root.add(ring);
     }
-    for (let ribbonIndex = 0; ribbonIndex < 14; ribbonIndex += 1) {
+    for (let ribbonIndex = 0; ribbonIndex < 22; ribbonIndex += 1) {
       const points: number[] = [];
-      const phase = (ribbonIndex / 14) * Math.PI * 2;
-      for (let k = 0; k < 220; k += 1) {
-        const u = k / 219;
-        const z = 5 + u * 292;
-        const radius = 2.2 + Math.sin(u * Math.PI) * (4.8 + ribbonIndex * 0.13);
-        const twist = phase + u * Math.PI * (7.8 + ribbonIndex * 0.22);
+      const phase = (ribbonIndex / 22) * Math.PI * 2;
+      for (let k = 0; k < 260; k += 1) {
+        const u = k / 259;
+        const z = 5 + u * 326;
+        const radius = 2.0 + Math.sin(u * Math.PI) * (5.8 + ribbonIndex * 0.16);
+        const twist = phase + u * Math.PI * (8.8 + ribbonIndex * 0.18);
         points.push(Math.cos(twist) * radius, Math.sin(twist) * radius * 0.58, z);
       }
       const geometry = new THREE.BufferGeometry();
@@ -3843,28 +3861,149 @@ class WarpTunnel {
       this.ribbons.push(line);
       this.root.add(line);
     }
-    this.companion = new THREE.Group();
-    const friendHull = new THREE.Mesh(
-      new THREE.ConeGeometry(0.28, 1.25, 5),
-      new THREE.MeshBasicMaterial({ color: COLORS.pink, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending })
-    );
-    friendHull.rotation.x = Math.PI / 2;
-    const friendEngine = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: createGlowTexture(992, COLORS.pink), color: COLORS.pink, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending, depthWrite: false })
-    );
-    friendEngine.scale.set(1.8, 1.8, 1);
-    friendEngine.position.z = -0.9;
-    this.companion.add(friendEngine, friendHull);
+    this.companion = this.makeCompanionShip(COLORS.pink);
     this.root.add(this.companion);
     this.root.visible = false;
   }
 
+  private makeCompanionShip(tint: number) {
+    const group = new THREE.Group();
+    group.userData.tint = tint;
+
+    const hullMaterial = new THREE.MeshStandardMaterial({
+      color: mixHex(COLORS.white, tint, 0.18),
+      roughness: 0.16,
+      metalness: 0.72,
+      emissive: new THREE.Color(tint),
+      emissiveIntensity: 0.18
+    });
+    const shadowMaterial = new THREE.MeshStandardMaterial({
+      color: mixHex(0x18233c, tint, 0.24),
+      roughness: 0.2,
+      metalness: 0.64,
+      emissive: new THREE.Color(tint),
+      emissiveIntensity: 0.12
+    });
+
+    const top = 0.06;
+    const bottom = -0.08;
+    const verts = [
+      0, top, 1.45,
+      -1.08, top, -0.16,
+      -0.34, top, -0.72,
+      0.34, top, -0.72,
+      1.08, top, -0.16,
+      0, bottom, 1.24,
+      -0.92, bottom, -0.12,
+      -0.28, bottom, -0.58,
+      0.28, bottom, -0.58,
+      0.92, bottom, -0.12
+    ];
+    const indices = [
+      0, 1, 2, 0, 2, 3, 0, 3, 4,
+      5, 7, 6, 5, 8, 7, 5, 9, 8,
+      0, 5, 6, 0, 6, 1,
+      1, 6, 7, 1, 7, 2,
+      2, 7, 8, 2, 8, 3,
+      3, 8, 9, 3, 9, 4,
+      4, 9, 5, 4, 5, 0
+    ];
+    const hullGeometry = new THREE.BufferGeometry();
+    hullGeometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    hullGeometry.setIndex(indices);
+    hullGeometry.computeVertexNormals();
+
+    const hull = new THREE.Mesh(hullGeometry, hullMaterial);
+    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.36, 1.18), shadowMaterial);
+    spine.position.set(0, 0.2, -0.1);
+    const canopy = new THREE.Mesh(
+      new THREE.SphereGeometry(0.23, 28, 14),
+      new THREE.MeshStandardMaterial({
+        color: mixHex(COLORS.white, tint, 0.25),
+        roughness: 0.04,
+        metalness: 0.08,
+        emissive: new THREE.Color(tint),
+        emissiveIntensity: 0.32,
+        transparent: true,
+        opacity: 0.92
+      })
+    );
+    canopy.scale.set(1.3, 0.26, 0.72);
+    canopy.position.set(0, 0.38, 0.16);
+
+    const engineTexture = createGlowTexture(1640 + (tint % 97), tint);
+    const engineMaterial = new THREE.SpriteMaterial({
+      map: engineTexture,
+      color: tint,
+      transparent: true,
+      opacity: 0.78,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const engineCenter = new THREE.Sprite(engineMaterial.clone());
+    engineCenter.position.set(0, 0.05, -0.98);
+    engineCenter.scale.set(1.3, 1.3, 1);
+    const engineLeft = new THREE.Sprite(engineMaterial.clone());
+    engineLeft.position.set(-0.42, 0.02, -0.78);
+    engineLeft.scale.set(0.8, 0.8, 1);
+    const engineRight = new THREE.Sprite(engineMaterial.clone());
+    engineRight.position.set(0.42, 0.02, -0.78);
+    engineRight.scale.set(0.8, 0.8, 1);
+
+    const slipRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.42, 0.018, 8, 128),
+      new THREE.MeshBasicMaterial({
+        color: mixHex(tint, COLORS.white, 0.46),
+        transparent: true,
+        opacity: 0.66,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    slipRing.rotation.x = Math.PI / 2.06;
+    slipRing.scale.y = 0.34;
+
+    const trail = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: engineTexture,
+        color: mixHex(tint, COLORS.white, 0.24),
+        transparent: true,
+        opacity: 0.26,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    trail.position.set(0, -0.02, -1.42);
+    trail.scale.set(3.0, 1.4, 1);
+
+    group.userData.engineCenter = engineCenter;
+    group.userData.engineLeft = engineLeft;
+    group.userData.engineRight = engineRight;
+    group.userData.slipRing = slipRing;
+    group.add(trail, slipRing, engineCenter, engineLeft, engineRight, hull, spine, canopy);
+    group.scale.setScalar(0.86);
+    this.companionTint = tint;
+    return group;
+  }
+
+  private ensureCompanionTint(tint: number) {
+    if (this.companionTint === tint) return;
+    const previousVisible = this.companion.visible;
+    this.companion.removeFromParent();
+    this.companion = this.makeCompanionShip(tint);
+    this.companion.visible = previousVisible;
+    this.root.add(this.companion);
+  }
+
   update(state: GameState, dt: number) {
     const position = this.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const shearPosition = this.shearGeometry.getAttribute('position') as THREE.BufferAttribute;
     const aligning = state.warp.phase === 'align';
     const charging = state.warp.phase === 'charge';
     const jumping = state.warp.phase === 'jump';
     const exiting = state.warp.phase === 'exit';
+    const warpDuration = Math.max(WARP_DURATION, state.warp.duration);
+    const distanceEnergy = THREE.MathUtils.clamp((warpDuration - WARP_DURATION) / 10, 0, 1);
     const chargeProgress = aligning
       ? smoothstep(state.warp.timer / WARP_ALIGN_DURATION) * 0.34
       : charging
@@ -3874,50 +4013,73 @@ class WarpTunnel {
           : exiting
             ? 1 - smoothstep(state.warp.timer / WARP_EXIT_DURATION) * 0.55
             : 1;
-    const jumpProgress = jumping ? smoothstep(state.warp.timer / WARP_DURATION) : exiting ? 1 : 0;
+    const jumpProgress = jumping ? smoothstep(state.warp.timer / warpDuration) : exiting ? 1 : 0;
     const exitProgress = exiting ? smoothstep(state.warp.timer / WARP_EXIT_DURATION) : 0;
     const t = state.warp.timer;
     const tunnelFade = exiting ? 1 - exitProgress : 1;
     const destinationColor = state.warp.destinationColor || COLORS.cyan;
     (this.chargeCore.material as THREE.SpriteMaterial).color.setHex(mixHex(destinationColor, COLORS.cyan, 0.45));
     (this.tunnelGlow.material as THREE.SpriteMaterial).color.setHex(mixHex(destinationColor, COLORS.blue, 0.42));
-    (this.streaks.material as THREE.LineBasicMaterial).opacity = (jumping ? 0.92 : 0.55) * tunnelFade;
+    (this.streaks.material as THREE.LineBasicMaterial).opacity = (jumping ? 0.9 + distanceEnergy * 0.08 : 0.55) * tunnelFade;
+    (this.shearLines.material as THREE.LineBasicMaterial).color.setHex(mixHex(destinationColor, COLORS.white, 0.56));
+    (this.shearLines.material as THREE.LineBasicMaterial).opacity = (jumping ? 0.34 + distanceEnergy * 0.18 : charging ? 0.1 + chargeProgress * 0.16 : 0.12) * tunnelFade;
     for (let i = 0; i < this.streakCount; i += 1) {
       const a = i * 12.9898;
       const angle = (Math.sin(a) * 43758.5453) % (Math.PI * 2);
-      const phaseSpeed = aligning ? 10 : charging ? 8 + chargeProgress * 18 : jumping ? 88 : 28 * (1 - exitProgress);
-      const z1 = ((i * 4.2 + t * (phaseSpeed + (i % 53)) * (jumping ? 1.62 : 0.76)) % 300) + 5;
-      const z2 = z1 + (aligning ? 3 : charging ? 7 + chargeProgress * 12 : jumping ? 34 : 12) + (i % 19);
+      const phaseSpeed = aligning ? 10 : charging ? 8 + chargeProgress * 18 : jumping ? 92 + distanceEnergy * 44 : 28 * (1 - exitProgress);
+      const z1 = ((i * 4.2 + t * (phaseSpeed + (i % 53)) * (jumping ? 1.58 + distanceEnergy * 0.32 : 0.76)) % 330) + 5;
+      const z2 = z1 + (aligning ? 3 : charging ? 7 + chargeProgress * 12 : jumping ? 40 + distanceEnergy * 28 : 12) + (i % 23);
       const baseR = aligning
         ? 8.6 - chargeProgress * 9.6
         : charging
           ? 9.4 * (1 - chargeProgress) + 0.8
           : exiting
             ? 12.2 * (1 - exitProgress) + 1.5
-            : 1.0 + jumpProgress * 12.8;
-      const r = Math.max(0.7, baseR) + (i % 83) * (jumping ? 0.19 : 0.08);
+            : 0.8 + jumpProgress * (13.8 + distanceEnergy * 3.2);
+      const r = Math.max(0.7, baseR) + (i % 91) * (jumping ? 0.2 + distanceEnergy * 0.05 : 0.08);
       const x = Math.cos(angle) * r;
       const y = Math.sin(angle) * r * 0.62;
       position.setXYZ(i * 2, x, y, z1);
-      const tailScale = jumping ? 1.78 : charging ? 0.35 + chargeProgress : exiting ? 1.25 - exitProgress * 0.42 : 0.72 + chargeProgress;
+      const tailScale = jumping ? 1.82 + distanceEnergy * 0.36 : charging ? 0.35 + chargeProgress : exiting ? 1.25 - exitProgress * 0.42 : 0.72 + chargeProgress;
       position.setXYZ(i * 2 + 1, x * tailScale, y * tailScale, z2);
     }
     position.needsUpdate = true;
-    this.root.rotation.z += dt * (aligning ? 0.42 : charging ? 0.55 + chargeProgress * 1.9 : jumping ? 2.25 + jumpProgress * 1.15 : 0.7);
+
+    for (let i = 0; i < this.shearCount; i += 1) {
+      const golden = i * 2.399963229728653;
+      const swirl = golden + t * (jumping ? 0.42 + distanceEnergy * 0.14 : 0.1);
+      const lane = ((i * 7.9 + t * (jumping ? 128 + distanceEnergy * 62 : charging ? 34 + chargeProgress * 34 : 24)) % 390) + 3;
+      const radius = jumping
+        ? 9 + (i % 67) * 0.34 + jumpProgress * (4.5 + distanceEnergy * 2.5)
+        : 5.2 + (i % 41) * 0.18 + chargeProgress * 5.4;
+      const sideSkew = Math.sin(t * 1.8 + i * 0.31) * (jumping ? 2.2 + distanceEnergy * 1.2 : 0.7);
+      const x1 = Math.cos(swirl) * radius + sideSkew;
+      const y1 = Math.sin(swirl) * radius * 0.56;
+      const z1 = lane;
+      const pull = jumping ? 20 + distanceEnergy * 24 : 5 + chargeProgress * 8;
+      const x2 = x1 * (1.18 + jumpProgress * 0.72);
+      const y2 = y1 * (1.18 + jumpProgress * 0.5);
+      const z2 = z1 + pull + (i % 29);
+      shearPosition.setXYZ(i * 2, x1, y1, z1);
+      shearPosition.setXYZ(i * 2 + 1, x2, y2, z2);
+    }
+    shearPosition.needsUpdate = true;
+
+    this.root.rotation.z += dt * (aligning ? 0.42 : charging ? 0.55 + chargeProgress * 1.9 : jumping ? 2.35 + jumpProgress * 1.2 + distanceEnergy * 0.48 : 0.7);
     this.chargeCore.visible = true;
     this.chargeCore.position.z = exiting ? 26 - exitProgress * 20 : charging || aligning ? 12 : 20;
-    this.chargeCore.scale.setScalar(charging || aligning ? 4 + chargeProgress * 22 : exiting ? 18 * (1 - exitProgress) + 5 : 15 + Math.sin(t * 14) * 2);
+    this.chargeCore.scale.setScalar(charging || aligning ? 4 + chargeProgress * 22 : exiting ? 18 * (1 - exitProgress) + 5 : 15 + distanceEnergy * 5 + Math.sin(t * 14) * 2);
     (this.chargeCore.material as THREE.SpriteMaterial).opacity = exiting ? 0.48 * (1 - exitProgress) : charging || aligning ? 0.22 + chargeProgress * 0.58 : 0.38;
-    this.tunnelGlow.scale.setScalar(exiting ? 42 * (1 - exitProgress) : charging || aligning ? 18 + chargeProgress * 34 : 46 + Math.sin(t * 5) * 3);
-    (this.tunnelGlow.material as THREE.SpriteMaterial).opacity = (jumping ? 0.24 : charging || aligning ? 0.1 + chargeProgress * 0.18 : 0.12) * tunnelFade;
+    this.tunnelGlow.scale.setScalar(exiting ? 42 * (1 - exitProgress) : charging || aligning ? 18 + chargeProgress * 34 : 48 + distanceEnergy * 8 + Math.sin(t * 5) * 3);
+    (this.tunnelGlow.material as THREE.SpriteMaterial).opacity = (jumping ? 0.24 + distanceEnergy * 0.08 : charging || aligning ? 0.1 + chargeProgress * 0.18 : 0.12) * tunnelFade;
     this.rings.forEach((ring, i) => {
-      ring.rotation.z -= dt * (aligning ? 0.48 + i * 0.02 : charging ? 0.95 + i * 0.035 : jumping ? 1.75 + i * 0.04 : 0.7);
-      ring.rotation.x += dt * (jumping ? 0.025 : 0.01);
-      ring.position.z = charging || aligning ? 10 + i * (2.0 + chargeProgress * 1.65) : exiting ? 14 + i * 4.7 - exitProgress * 18 : 6 + i * 5.4;
-      ring.scale.setScalar((charging || aligning ? 0.28 + chargeProgress * 1.2 : exiting ? 1.42 - exitProgress * 0.72 : 1.02 + jumpProgress * 0.48) + Math.sin(t * 5 + i) * 0.075);
+      ring.rotation.z -= dt * (aligning ? 0.48 + i * 0.02 : charging ? 0.95 + i * 0.035 : jumping ? 1.85 + i * 0.036 + distanceEnergy * 0.45 : 0.7);
+      ring.rotation.x += dt * (jumping ? 0.03 + distanceEnergy * 0.02 : 0.01);
+      ring.position.z = charging || aligning ? 10 + i * (1.55 + chargeProgress * 1.25) : exiting ? 14 + i * 3.7 - exitProgress * 18 : 6 + i * 4.15;
+      ring.scale.setScalar((charging || aligning ? 0.28 + chargeProgress * 1.2 : exiting ? 1.42 - exitProgress * 0.72 : 1.02 + jumpProgress * (0.54 + distanceEnergy * 0.24)) + Math.sin(t * 5 + i) * 0.075);
       const ringMat = ring.material as THREE.MeshBasicMaterial;
       ringMat.color.setHex(i % 3 === 0 ? mixHex(destinationColor, COLORS.white, 0.28) : i % 2 ? COLORS.purple : COLORS.cyan);
-      ringMat.opacity = exiting ? Math.max(0.035, 0.25 * (1 - exitProgress)) : charging || aligning ? 0.14 + chargeProgress * 0.2 : 0.25;
+      ringMat.opacity = exiting ? Math.max(0.035, 0.25 * (1 - exitProgress)) : charging || aligning ? 0.14 + chargeProgress * 0.2 : 0.23 + distanceEnergy * 0.05;
     });
     this.ribbons.forEach((ribbon, i) => {
       ribbon.rotation.z += dt * (0.42 + i * 0.055 + jumpProgress * 0.75);
@@ -3926,12 +4088,30 @@ class WarpTunnel {
       mat.color.setHex(i % 3 === 0 ? mixHex(destinationColor, COLORS.white, 0.24) : i % 2 ? COLORS.purple : COLORS.cyan);
       mat.opacity = (0.12 + jumpProgress * 0.26) * tunnelFade;
     });
+    const partner =
+      (state.warp.companionId ? state.remotePlayers.get(state.warp.companionId) : null) ??
+      [...state.remotePlayers.values()][0] ??
+      null;
+    const companionTint = partner?.color || COLORS.pink;
+    this.ensureCompanionTint(companionTint);
     this.companion.visible = state.warp.groupWarp;
     if (state.warp.groupWarp) {
-      const lane = exiting ? 11 + exitProgress * 2 : charging || aligning ? 9 + chargeProgress * 5 : 20 + jumpProgress * 20;
-      this.companion.position.set(-1.65 + Math.sin(t * 4) * 0.18, -0.85 + Math.cos(t * 3.3) * 0.12, lane);
-      this.companion.rotation.z = -0.18 + Math.sin(t * 5) * 0.08;
-      this.companion.rotation.y = Math.sin(t * 3) * 0.22;
+      const lane = exiting ? 12 + exitProgress * 4 : charging || aligning ? 11 + chargeProgress * 6 : 24 + jumpProgress * (28 + distanceEnergy * 10);
+      this.companion.position.set(-2.65 + Math.sin(t * 4) * 0.18, -0.45 + Math.cos(t * 3.3) * 0.12, lane);
+      this.companion.rotation.set(0.12 + Math.sin(t * 2.8) * 0.035, Math.sin(t * 3) * 0.16, -0.18 + Math.sin(t * 5) * 0.07);
+      this.companion.scale.setScalar(0.86 + jumpProgress * 0.14);
+      const engineCenter = this.companion.userData.engineCenter as THREE.Sprite | undefined;
+      const engineLeft = this.companion.userData.engineLeft as THREE.Sprite | undefined;
+      const engineRight = this.companion.userData.engineRight as THREE.Sprite | undefined;
+      const slipRing = this.companion.userData.slipRing as THREE.Mesh | undefined;
+      const enginePulse = 1 + Math.sin(t * 15) * 0.16;
+      engineCenter?.scale.setScalar((1.18 + jumpProgress * 1.1 + distanceEnergy * 0.45) * enginePulse);
+      engineLeft?.scale.setScalar((0.72 + jumpProgress * 0.58) * enginePulse);
+      engineRight?.scale.setScalar((0.72 + jumpProgress * 0.58) * enginePulse);
+      if (slipRing) {
+        slipRing.rotation.z += dt * (2.2 + jumpProgress * 2.4);
+        (slipRing.material as THREE.MeshBasicMaterial).opacity = 0.52 + jumpProgress * 0.22;
+      }
     }
   }
 }

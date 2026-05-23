@@ -99,7 +99,8 @@ class GalacticEvoRoom extends Room {
               y: Number(data.destination.y) || 0,
               z: Number(data.destination.z) || 0,
               name: String(data.destination.name || 'Squad destination').slice(0, 80),
-              color: Number(data.destination.color) || 0x50ffff
+              color: Number(data.destination.color) || 0x50ffff,
+              duration: Math.max(5, Math.min(15, Number(data.destination.duration) || 5))
             }
           : undefined,
         sentAt: Date.now()

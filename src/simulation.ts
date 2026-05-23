@@ -4,7 +4,9 @@ export type TrackerMode = 'nearest' | 'systems';
 
 export const WORLD_SIZE = 1800000;
 export const RENDER_DISTANCE = 74000;
-export const WARP_DURATION = 3.2;
+export const WARP_MIN_DURATION = 5.0;
+export const WARP_MAX_DURATION = 15.0;
+export const WARP_DURATION = WARP_MIN_DURATION;
 export const WARP_ALIGN_DURATION = 2.15;
 export const WARP_CHARGE_DURATION = 3.0;
 export const WARP_EXIT_DURATION = 1.15;
@@ -143,6 +145,7 @@ export interface WarpPayload {
   z: number;
   name: string;
   color: number;
+  duration?: number;
 }
 
 export interface MultiplayerHooks {
@@ -168,6 +171,7 @@ export interface WarpState {
   alignStartPitch: number;
   alignEndYaw: number;
   alignEndPitch: number;
+  duration: number;
   groupWarp: boolean;
   companionId: string | null;
 }
@@ -341,6 +345,11 @@ export function distance(a: Vec3, b: Vec3) {
   return Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
 }
 
+export function warpDurationForDistance(distanceUnits: number) {
+  const normalized = clamp(Math.pow(Math.max(0, distanceUnits) / 620000, 0.72), 0, 1);
+  return WARP_MIN_DURATION + (WARP_MAX_DURATION - WARP_MIN_DURATION) * normalized;
+}
+
 export function copyVec(v: Vec3): Vec3 {
   return { x: v.x, y: v.y, z: v.z };
 }
@@ -492,6 +501,7 @@ export class GameState {
     alignStartPitch: 0,
     alignEndYaw: 0,
     alignEndPitch: 0,
+    duration: WARP_MIN_DURATION,
     groupWarp: false,
     companionId: null
   };
@@ -727,7 +737,7 @@ export class GameState {
     this.triggerNearestEvent();
   }
 
-  beginWarp(destination: Trackable, options: { fromNetwork?: boolean; groupWarp?: boolean; companionId?: string | null } = {}) {
+  beginWarp(destination: Trackable, options: { fromNetwork?: boolean; groupWarp?: boolean; companionId?: string | null; duration?: number } = {}) {
     const f = forwardVector(this.player);
     const isSpecialPlanet =
       !isEvent(destination) &&
@@ -750,7 +760,8 @@ export class GameState {
       name: destination.name,
       color: destination.color,
       groupWarp: options.groupWarp ?? shouldGroupWarp,
-      companionId: options.companionId ?? (shouldGroupWarp ? squadPilot?.id ?? null : null)
+      companionId: options.companionId ?? (shouldGroupWarp ? squadPilot?.id ?? null : null),
+      duration: options.duration
     });
     this.trackedTarget = destination;
     this.selectedTarget = destination;
@@ -763,12 +774,18 @@ export class GameState {
         y: end.y,
         z: end.z,
         name: destination.name,
-        color: destination.color
+        color: destination.color,
+        duration: this.warp.duration
       });
     }
   }
 
-  beginWarpToPosition(position: Vec3, name: string, color: number = COLORS.cyan, options: { fromNetwork?: boolean; groupWarp?: boolean; companionId?: string | null; exactEnd?: boolean } = {}) {
+  beginWarpToPosition(
+    position: Vec3,
+    name: string,
+    color: number = COLORS.cyan,
+    options: { fromNetwork?: boolean; groupWarp?: boolean; companionId?: string | null; exactEnd?: boolean; duration?: number } = {}
+  ) {
     const f = forwardVector(this.player);
     const end = options.exactEnd
       ? copyVec(position)
@@ -784,7 +801,8 @@ export class GameState {
       name,
       color,
       groupWarp: options.groupWarp ?? false,
-      companionId: options.companionId ?? null
+      companionId: options.companionId ?? null,
+      duration: options.duration
     });
     this.trackedTarget = null;
     this.selectedTarget = null;
@@ -841,10 +859,13 @@ export class GameState {
     color: number;
     groupWarp: boolean;
     companionId: string | null;
+    duration?: number;
   }) {
     this.player.cameraYawOffset = 0;
     this.player.cameraPitchOffset = 0;
     const aim = angleToPoint(this.player.position, input.focus);
+    const calculatedDuration = warpDurationForDistance(distance(this.player.position, input.focus));
+    const requestedDuration = Number.isFinite(input.duration ?? NaN) ? input.duration! : calculatedDuration;
     this.warp.active = true;
     this.warp.phase = 'align';
     this.warp.timer = 0;
@@ -857,6 +878,7 @@ export class GameState {
     this.warp.alignStartPitch = this.player.pitch;
     this.warp.alignEndYaw = aim.yaw;
     this.warp.alignEndPitch = aim.pitch;
+    this.warp.duration = clamp(requestedDuration, WARP_MIN_DURATION, WARP_MAX_DURATION);
     this.warp.groupWarp = input.groupWarp;
     this.warp.companionId = input.companionId;
   }
@@ -1200,13 +1222,14 @@ export class GameState {
       this.warp.phase = 'idle';
       this.warp.groupWarp = false;
       this.warp.companionId = null;
+      this.warp.duration = WARP_MIN_DURATION;
       this.setMessage(`Warp complete. Arrived near ${this.warp.destinationName}.`, 4.5);
       return;
     }
 
-    const t = smoothstep(this.warp.timer / WARP_DURATION);
+    const t = smoothstep(this.warp.timer / Math.max(WARP_MIN_DURATION, this.warp.duration));
     this.player.position = lerpVec(this.warp.start, this.warp.end, t);
-    if (this.warp.timer >= WARP_DURATION) {
+    if (this.warp.timer >= Math.max(WARP_MIN_DURATION, this.warp.duration)) {
       this.player.position = copyVec(this.warp.end);
       this.warp.phase = 'exit';
       this.warp.timer = 0;
