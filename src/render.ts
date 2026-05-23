@@ -1453,8 +1453,22 @@ export class UniverseRenderer {
         opacity: 0.9
       })
     );
-    canopy.scale.set(1.25, 0.28, 0.62);
-    canopy.position.set(0, 0.44, -0.52);
+    canopy.scale.set(1.22, 0.26, 0.62);
+    canopy.position.set(0, 0.15, -0.52);
+
+    const cockpitBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.36, 0.42, 0.08, 36),
+      new THREE.MeshStandardMaterial({
+        color: mixHex(0x10182b, tint, 0.28),
+        roughness: 0.16,
+        metalness: 0.72,
+        emissive: new THREE.Color(tint),
+        emissiveIntensity: 0.14
+      })
+    );
+    cockpitBase.scale.set(1.28, 1, 0.62);
+    cockpitBase.rotation.x = Math.PI / 2;
+    cockpitBase.position.set(0, 0.08, -0.52);
 
     const railGeometry = new THREE.BufferGeometry();
     railGeometry.setAttribute(
@@ -1502,7 +1516,7 @@ export class UniverseRenderer {
     const aura = this.spriteGlow(tint, 2.9, 0.08);
     aura.position.set(0, 0.08, 0.9);
     group.userData.aura = aura;
-    group.add(aura, engine, engineLeft, engineRight, leftPod, rightPod, noseGlow, hull, body, tailFin, bevel, canopy, rails);
+    group.add(aura, engine, engineLeft, engineRight, leftPod, rightPod, noseGlow, hull, body, tailFin, bevel, cockpitBase, canopy, rails);
     group.scale.setScalar(0.82);
     return group;
   }
