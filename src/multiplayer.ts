@@ -44,7 +44,7 @@ type PeerMessage = {
 };
 
 const ROOM_NAME = 'galactic_evo';
-const SEND_RATE = 1 / 15;
+const SEND_RATE = 1 / 30;
 
 function urlParams() {
   return new URLSearchParams(window.location.search);
@@ -84,6 +84,15 @@ function colorForSession(sessionId: string) {
   }
   const palette = [COLORS.cyan, COLORS.pink, COLORS.gold, COLORS.green, COLORS.purple, COLORS.softWhite];
   return palette[Math.abs(hash) % palette.length];
+}
+
+function finiteNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback = min) {
+  return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
 }
 
 function eventTitle(event: WorldEvent) {
@@ -273,20 +282,28 @@ export class MultiplayerClient {
     players.forEach((player, id) => {
       if (id === this.room?.sessionId) return;
       seen.add(id);
+      const name = cleanName(player.name || 'Friend');
+      const existing = this.state.remotePlayers.get(id);
+      const serverHp = clampNumber(player.hp, 0, COMBAT_MAX_HP, COMBAT_MAX_HP);
+      const preserveLocalDamageEstimate =
+        !!existing &&
+        existing.hp < serverHp &&
+        this.state.combat.lastDamage?.name === name &&
+        this.state.combat.lastDamage.timer > 0.35;
       this.state.remotePlayers.set(id, {
         id,
-        name: cleanName(player.name || 'Friend'),
-        color: player.color || colorForSession(id),
+        name,
+        color: finiteNumber(player.color, colorForSession(id)),
         position: {
-          x: Number(player.x) || 0,
-          y: Number(player.y) || 0,
-          z: Number(player.z) || 0
+          x: finiteNumber(player.x, existing?.position.x ?? 0),
+          y: finiteNumber(player.y, existing?.position.y ?? 0),
+          z: finiteNumber(player.z, existing?.position.z ?? 0)
         },
-        yaw: Number(player.yaw) || 0,
-        pitch: Number(player.pitch) || 0,
-        hp: Math.max(0, Math.min(COMBAT_MAX_HP, Number(player.hp) || COMBAT_MAX_HP)),
+        yaw: finiteNumber(player.yaw, existing?.yaw ?? 0),
+        pitch: finiteNumber(player.pitch, existing?.pitch ?? 0),
+        hp: preserveLocalDamageEstimate ? existing.hp : serverHp,
         warpPhase: player.warpPhase || 'idle',
-        updatedAt: Number(player.updatedAt) || Date.now()
+        updatedAt: finiteNumber(player.updatedAt, Date.now())
       });
       if (!this.state.trackedRemotePlayerId) this.state.trackedRemotePlayerId = id;
     });

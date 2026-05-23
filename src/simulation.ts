@@ -19,6 +19,7 @@ export const COMBAT_DAMAGE = 5;
 export const COMBAT_FIRE_INTERVAL = 0.18;
 export const COMBAT_OVERHEAT_COOLDOWN = 4;
 export const COMBAT_LOCK_COOLDOWN = 5;
+export const COMBAT_RESPAWN_DELAY = 6;
 
 export const COLORS = {
   black: 0x000000,
@@ -246,8 +247,10 @@ export interface CombatState {
   overheated: boolean;
   overheatTimer: number;
   targetLockId: string | null;
+  targetLockAge: number;
   lockCooldown: number;
   lockBreakTimer: number;
+  disabledTimer: number;
   engagedTimer: number;
   lastDamage: { name: string; damage: number; remainingHp: number; timer: number } | null;
   lastIncoming: { name: string; damage: number; hp: number; timer: number } | null;
@@ -614,8 +617,10 @@ export class GameState {
     overheated: false,
     overheatTimer: 0,
     targetLockId: null,
+    targetLockAge: 0,
     lockCooldown: 0,
     lockBreakTimer: 0,
+    disabledTimer: 0,
     engagedTimer: 0,
     lastDamage: null,
     lastIncoming: null,
@@ -708,16 +713,18 @@ export class GameState {
     if (this.combat.targetLockId) {
       const pilot = this.remotePlayers.get(this.combat.targetLockId);
       this.combat.targetLockId = null;
+      this.combat.targetLockAge = 0;
       this.setMessage(pilot ? `Target lock released: ${pilot.name}.` : 'Target lock released.', 2);
       return true;
     }
-    const target = this.bestAimTarget(0.18);
+    const target = this.bestAimTarget(0.24);
     if (!target) {
       this.setMessage('No pilot in lock cone.', 2.2);
       return true;
     }
     this.combat.targetLockId = target.id;
     this.trackedRemotePlayerId = target.id;
+    this.combat.targetLockAge = 0;
     this.combat.lockBreakTimer = 0;
     this.combat.engagedTimer = Math.max(this.combat.engagedTimer, 8);
     this.setMessage(`Target locked: ${target.name}.`, 2.8);
@@ -1313,7 +1320,7 @@ export class GameState {
       const d = Math.max(1, Math.hypot(toPilot.x, toPilot.y, toPilot.z));
       if (d > 36000) continue;
       const angle = this.angleBetween(aim, toPilot);
-      const angularRadius = clamp(620 / d, 0.012, 0.09);
+      const angularRadius = clamp(1050 / d, 0.025, 0.14);
       if (angle > maxAngle + angularRadius) continue;
       const score = angle * 100000 + d * 0.002;
       if (score < bestScore) {
@@ -1328,6 +1335,7 @@ export class GameState {
     if (!this.combat.targetLockId) return;
     this.combat.targetLockId = null;
     this.combat.lockCooldown = COMBAT_LOCK_COOLDOWN;
+    this.combat.targetLockAge = 0;
     this.combat.lockBreakTimer = 0;
     this.setMessage(reason, 2.8);
   }
@@ -1336,24 +1344,27 @@ export class GameState {
     if (!this.combat.targetLockId) return;
     const target = this.remotePlayers.get(this.combat.targetLockId);
     if (!target || (target.hp ?? COMBAT_MAX_HP) <= 0) {
-      this.breakTargetLock('Target lock lost.');
+      this.breakTargetLock(target ? 'Target disabled. Lock released.' : 'Target lock lost.');
       return;
     }
     const toTarget = subVec(target.position, this.player.position);
     const d = distance(this.player.position, target.position);
     const angle = this.angleBetween(this.aimVector(), toTarget);
-    if (d > 42000 || angle > 0.74) {
+    this.combat.targetLockAge += dt;
+    const grace = this.combat.targetLockAge < 0.75;
+    const breakAngle = 0.98 + clamp(1800 / Math.max(1, d), 0, 0.22);
+    if (!grace && (d > 47000 || angle > breakAngle)) {
       this.combat.lockBreakTimer += dt;
-      if (this.combat.lockBreakTimer > 0.36) this.breakTargetLock('Target outmaneuvered lock.');
+      if (this.combat.lockBreakTimer > 0.85) this.breakTargetLock('Target outmaneuvered lock.');
       return;
     }
-    this.combat.lockBreakTimer = Math.max(0, this.combat.lockBreakTimer - dt * 2);
+    this.combat.lockBreakTimer = Math.max(0, this.combat.lockBreakTimer - dt * 3);
     const aim = angleToPoint(this.player.position, target.position);
-    const tracking = clamp(dt * 2.7, 0, 0.18);
+    const tracking = clamp(dt * (grace ? 5.2 : 3.15), 0, grace ? 0.32 : 0.2);
     this.player.yaw = lerpAngle(this.player.yaw, aim.yaw, tracking);
     this.player.pitch = lerpAngle(this.player.pitch, aim.pitch, tracking);
-    this.player.cameraYawOffset *= Math.max(0, 1 - dt * 3.4);
-    this.player.cameraPitchOffset *= Math.max(0, 1 - dt * 3.4);
+    this.player.cameraYawOffset *= Math.max(0, 1 - dt * (grace ? 7.5 : 4.2));
+    this.player.cameraPitchOffset *= Math.max(0, 1 - dt * (grace ? 7.5 : 4.2));
   }
 
   private fireCombatShot() {
@@ -1449,6 +1460,8 @@ export class GameState {
     this.combat.engagedTimer = Math.max(this.combat.engagedTimer, 10);
     this.combat.lastIncoming = { name: pilot.name, damage, hp: this.combat.hp, timer: 4.5 };
     if (this.combat.hp <= 0) {
+      this.combat.disabledTimer = COMBAT_RESPAWN_DELAY;
+      this.combat.firing = false;
       this.breakTargetLock('Ship disabled. Target lock lost.');
       this.setMessage('Hull integrity critical. Drift and regenerate.', 4);
     }
@@ -1460,8 +1473,10 @@ export class GameState {
     if (!enabled) {
       this.combat.firing = false;
       this.combat.targetLockId = null;
+      this.combat.targetLockAge = 0;
       this.combat.engagedTimer = 0;
       this.combat.hp = COMBAT_MAX_HP;
+      this.combat.disabledTimer = 0;
     }
 
     this.combat.engagedTimer = Math.max(0, this.combat.engagedTimer - dt);
@@ -1475,7 +1490,12 @@ export class GameState {
       if (this.combat.lastIncoming.timer <= 0) this.combat.lastIncoming = null;
     }
 
-    if (enabled && this.combat.hp < COMBAT_MAX_HP) {
+    if (this.combat.disabledTimer > 0) {
+      this.combat.disabledTimer = Math.max(0, this.combat.disabledTimer - dt);
+      this.combat.firing = false;
+    }
+
+    if (enabled && this.combat.hp < COMBAT_MAX_HP && this.combat.disabledTimer <= 0) {
       this.combat.regenTimer += dt;
       if (this.combat.regenTimer >= COMBAT_REGEN_INTERVAL) {
         this.combat.regenTimer = 0;
@@ -1498,7 +1518,7 @@ export class GameState {
 
     this.updateTargetLock(dt);
 
-    if (enabled && this.combat.firing && !this.combat.overheated && this.combat.hp > 0) {
+    if (enabled && this.combat.firing && !this.combat.overheated && this.combat.hp > 0 && this.combat.disabledTimer <= 0) {
       this.combat.fireTimer -= dt;
       while (this.combat.fireTimer <= 0 && !this.combat.overheated) {
         this.fireCombatShot();

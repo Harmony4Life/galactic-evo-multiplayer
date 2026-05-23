@@ -1809,8 +1809,8 @@ export class UniverseRenderer {
 
       const targetPosition = new THREE.Vector3(rel.x * RENDER_SCALE, rel.y * RENDER_SCALE, rel.z * RENDER_SCALE);
       group.position.copy(targetPosition);
-      group.rotation.set(pilot.pitch * 0.45, pilot.yaw + Math.PI, Math.sin(elapsed * 2.7 + pilot.id.length) * 0.035);
-      group.scale.setScalar(THREE.MathUtils.clamp(0.34 + Math.sqrt(Math.max(d, 1)) * 0.0022, 0.38, 0.68));
+      group.rotation.set(pilot.pitch * 0.45, pilot.yaw + Math.PI, 0);
+      group.scale.setScalar(0.52);
       const engine = group.userData.engine as THREE.Sprite | undefined;
       if (engine) {
         const pulse = 1 + Math.sin(elapsed * 9.5) * 0.16;
@@ -1819,9 +1819,8 @@ export class UniverseRenderer {
       const label = group.userData.label as THREE.Object3D | undefined;
       if (label) {
         label.visible = d < 26000;
-        label.position.y = 2.25 + Math.sin(elapsed * 2.3) * 0.08;
+        label.position.y = 2.25;
       }
-      group.position.y += Math.sin(elapsed * 3 + pilot.id.length) * 0.025;
     }
   }
 

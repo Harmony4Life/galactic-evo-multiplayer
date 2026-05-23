@@ -49,10 +49,20 @@ function colorFromSession(id) {
   return palette[Math.abs(hash) % palette.length];
 }
 
+function finiteNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampNumber(value, min, max, fallback = min) {
+  return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
+}
+
 class GalacticEvoRoom extends Room {
   maxClients = 2;
 
   onCreate(options) {
+    if (typeof this.setPatchRate === 'function') this.setPatchRate(1000 / 30);
     const roomCode = cleanRoomCode(options.roomCode) || cleanRoomCode(this.roomId);
     if (activeRoomCodes.has(roomCode)) {
       throw new Error(`Room ${roomCode} already has two pilots.`);
@@ -65,13 +75,13 @@ class GalacticEvoRoom extends Room {
       const player = this.state.players.get(client.sessionId);
       if (!player || !data) return;
       player.name = cleanName(data.name || player.name);
-      player.color = Number(data.color) || player.color;
-      player.x = Number(data.x) || 0;
-      player.y = Number(data.y) || 0;
-      player.z = Number(data.z) || 0;
-      player.yaw = Number(data.yaw) || 0;
-      player.pitch = Number(data.pitch) || 0;
-      player.hp = Math.max(0, Math.min(100, Number(data.hp) || 100));
+      player.color = finiteNumber(data.color, player.color);
+      player.x = finiteNumber(data.x, player.x);
+      player.y = finiteNumber(data.y, player.y);
+      player.z = finiteNumber(data.z, player.z);
+      player.yaw = finiteNumber(data.yaw, player.yaw);
+      player.pitch = finiteNumber(data.pitch, player.pitch);
+      player.hp = clampNumber(data.hp, 0, 100, player.hp);
       player.warpPhase = String(data.warpPhase || 'idle').slice(0, 12);
       player.updatedAt = Date.now();
     });
@@ -93,18 +103,18 @@ class GalacticEvoRoom extends Room {
         originId: client.sessionId,
         targetId: String(data.targetId || ''),
         name: cleanName(data.name),
-        color: Number(data.color) || colorFromSession(client.sessionId),
-        x: Number(data.x) || 0,
-        y: Number(data.y) || 0,
-        z: Number(data.z) || 0,
+        color: finiteNumber(data.color, colorFromSession(client.sessionId)),
+        x: finiteNumber(data.x),
+        y: finiteNumber(data.y),
+        z: finiteNumber(data.z),
         destination: data.destination && typeof data.destination === 'object'
           ? {
-              x: Number(data.destination.x) || 0,
-              y: Number(data.destination.y) || 0,
-              z: Number(data.destination.z) || 0,
+              x: finiteNumber(data.destination.x),
+              y: finiteNumber(data.destination.y),
+              z: finiteNumber(data.destination.z),
               name: String(data.destination.name || 'Squad destination').slice(0, 80),
-              color: Number(data.destination.color) || 0x50ffff,
-              duration: Math.max(5, Math.min(15, Number(data.destination.duration) || 5))
+              color: finiteNumber(data.destination.color, 0x50ffff),
+              duration: clampNumber(data.destination.duration, 5, 15, 5)
             }
           : undefined,
         shot: data.shot && typeof data.shot === 'object'
@@ -112,21 +122,21 @@ class GalacticEvoRoom extends Room {
               id: String(data.shot.id || '').slice(0, 80),
               side: Number(data.shot.side) < 0 ? -1 : 1,
               origin: {
-                x: Number(data.shot.origin?.x) || 0,
-                y: Number(data.shot.origin?.y) || 0,
-                z: Number(data.shot.origin?.z) || 0
+                x: finiteNumber(data.shot.origin?.x),
+                y: finiteNumber(data.shot.origin?.y),
+                z: finiteNumber(data.shot.origin?.z)
               },
               end: {
-                x: Number(data.shot.end?.x) || 0,
-                y: Number(data.shot.end?.y) || 0,
-                z: Number(data.shot.end?.z) || 0
+                x: finiteNumber(data.shot.end?.x),
+                y: finiteNumber(data.shot.end?.y),
+                z: finiteNumber(data.shot.end?.z)
               },
-              yaw: Number(data.shot.yaw) || 0,
-              pitch: Number(data.shot.pitch) || 0,
+              yaw: finiteNumber(data.shot.yaw),
+              pitch: finiteNumber(data.shot.pitch),
               targetId: String(data.shot.targetId || ''),
               hit: Boolean(data.shot.hit),
-              damage: Math.max(0, Math.min(20, Number(data.shot.damage) || 0)),
-              targetHp: Math.max(0, Math.min(100, Number(data.shot.targetHp) || 0))
+              damage: clampNumber(data.shot.damage, 0, 20),
+              targetHp: clampNumber(data.shot.targetHp, 0, 100)
             }
           : undefined,
         sentAt: Date.now()
@@ -145,12 +155,12 @@ class GalacticEvoRoom extends Room {
   onJoin(client, options) {
     const player = new Player({
       name: cleanName(options.name),
-      color: Number(options.color) || colorFromSession(client.sessionId),
-      x: Number(options.x) || 0,
-      y: Number(options.y) || 0,
-      z: Number(options.z) || 0,
-      yaw: Number(options.yaw) || 0,
-      pitch: Number(options.pitch) || 0,
+      color: finiteNumber(options.color, colorFromSession(client.sessionId)),
+      x: finiteNumber(options.x),
+      y: finiteNumber(options.y),
+      z: finiteNumber(options.z),
+      yaw: finiteNumber(options.yaw),
+      pitch: finiteNumber(options.pitch),
       hp: 100,
       warpPhase: 'idle',
       updatedAt: Date.now()
