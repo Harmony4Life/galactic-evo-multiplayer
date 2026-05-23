@@ -143,6 +143,8 @@ export class MultiplayerClient {
     const { position, yaw, pitch } = this.state.player;
     try {
       this.room.send('player:update', {
+        name: cleanName(this.nameInput?.value || 'Pilot'),
+        color: this.state.player.shipColor,
         x: position.x,
         y: position.y,
         z: position.z,
@@ -175,6 +177,7 @@ export class MultiplayerClient {
       this.room = await this.client.joinOrCreate<RoomStatePatch>(ROOM_NAME, {
         roomCode,
         name,
+        color: this.state.player.shipColor,
         x: position.x,
         y: position.y,
         z: position.z,

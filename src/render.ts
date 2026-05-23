@@ -1354,20 +1354,20 @@ export class UniverseRenderer {
     const group = new THREE.Group();
     group.userData.tint = tint;
     const hullMaterial = new THREE.MeshStandardMaterial({
-      color: mixHex(COLORS.white, tint, 0.08),
-      roughness: 0.18,
-      metalness: 0.58,
+      color: mixHex(COLORS.white, tint, 0.12),
+      roughness: 0.14,
+      metalness: 0.68,
       emissive: new THREE.Color(tint),
-      emissiveIntensity: 0.08
+      emissiveIntensity: 0.12
     });
     const underMaterial = new THREE.MeshStandardMaterial({
-      color: mixHex(COLORS.softWhite, tint, 0.18),
-      roughness: 0.24,
-      metalness: 0.52,
+      color: mixHex(0x24324e, tint, 0.22),
+      roughness: 0.2,
+      metalness: 0.62,
       emissive: new THREE.Color(tint),
-      emissiveIntensity: 0.05
+      emissiveIntensity: 0.1
     });
-    const top = 0.08;
+    const top = 0.05;
     const bottom = -0.08;
     const verts = [
       0, top, -1.95,
@@ -1400,20 +1400,34 @@ export class UniverseRenderer {
     );
 
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.74, 0.46, 1.05, 1, 1, 1),
+      new THREE.CylinderGeometry(0.28, 0.48, 1.42, 36, 1, false),
       underMaterial
     );
-    body.position.set(0, 0.34, -0.18);
-    body.rotation.x = -0.08;
+    body.rotation.x = Math.PI / 2;
+    body.scale.y = 0.54;
+    body.position.set(0, 0.26, -0.04);
 
-    const tailFin = new THREE.Mesh(
-      new THREE.BoxGeometry(0.46, 0.72, 0.34, 1, 1, 1),
-      underMaterial
+    const finGeometry = new THREE.BufferGeometry();
+    finGeometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(
+        [
+          -0.18, 0.14, 0.44,
+          0.18, 0.14, 0.44,
+          0, 0.92, 0.58,
+          -0.18, 0.14, 0.86,
+          0.18, 0.14, 0.86,
+          0, 0.92, 0.58
+        ],
+        3
+      )
     );
-    tailFin.position.set(0, 0.58, 0.46);
+    finGeometry.setIndex([0, 1, 2, 3, 5, 4, 0, 2, 3, 1, 4, 5]);
+    finGeometry.computeVertexNormals();
+    const tailFin = new THREE.Mesh(finGeometry, underMaterial);
 
     const bevel = new THREE.Mesh(
-      new THREE.BoxGeometry(1.1, 0.08, 0.28),
+      new THREE.BoxGeometry(1.15, 0.055, 0.2),
       new THREE.MeshStandardMaterial({
         color: mixHex(tint, COLORS.white, 0.45),
         roughness: 0.16,
@@ -1423,6 +1437,9 @@ export class UniverseRenderer {
       })
     );
     bevel.position.set(0, 0.12, 0.76);
+
+    const noseGlow = this.spriteGlow(mixHex(tint, COLORS.white, 0.44), 0.9, 0.18);
+    noseGlow.position.set(0, 0.08, -1.78);
 
     const canopy = new THREE.Mesh(
       new THREE.SphereGeometry(0.26, 32, 16),
@@ -1436,20 +1453,56 @@ export class UniverseRenderer {
         opacity: 0.9
       })
     );
-    canopy.scale.set(1.2, 0.34, 0.72);
-    canopy.position.set(0, 0.66, -0.76);
+    canopy.scale.set(1.25, 0.28, 0.62);
+    canopy.position.set(0, 0.44, -0.52);
+
+    const railGeometry = new THREE.BufferGeometry();
+    railGeometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(
+        [
+          -0.98, 0.09, -0.02, -1.36, 0.08, 0.2,
+          0.98, 0.09, -0.02, 1.36, 0.08, 0.2,
+          -0.42, 0.1, 0.82, -0.74, 0.1, 1.02,
+          0.42, 0.1, 0.82, 0.74, 0.1, 1.02
+        ],
+        3
+      )
+    );
+    const rails = new THREE.LineSegments(
+      railGeometry,
+      new THREE.LineBasicMaterial({
+        color: mixHex(tint, COLORS.white, 0.44),
+        transparent: true,
+        opacity: 0.7,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
 
     const engine = this.spriteGlow(tint, 1.35, 0.52);
     engine.position.set(0, 0.12, 1.1);
     group.userData.engine = engine;
+    const enginePodMaterial = new THREE.MeshStandardMaterial({
+      color: mixHex(0x17223b, tint, 0.2),
+      roughness: 0.18,
+      metalness: 0.72,
+      emissive: new THREE.Color(tint),
+      emissiveIntensity: 0.12
+    });
+    const leftPod = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.46, 24), enginePodMaterial);
+    leftPod.rotation.x = Math.PI / 2;
+    leftPod.position.set(-0.46, 0.08, 0.92);
+    const rightPod = leftPod.clone();
+    rightPod.position.x = 0.46;
     const engineLeft = this.spriteGlow(tint, 0.78, 0.42);
-    engineLeft.position.set(-0.45, 0.08, 0.95);
+    engineLeft.position.set(-0.46, 0.08, 1.1);
     const engineRight = this.spriteGlow(tint, 0.78, 0.42);
-    engineRight.position.set(0.45, 0.08, 0.95);
+    engineRight.position.set(0.46, 0.08, 1.1);
     const aura = this.spriteGlow(tint, 2.9, 0.08);
     aura.position.set(0, 0.08, 0.9);
     group.userData.aura = aura;
-    group.add(aura, engine, engineLeft, engineRight, hull, body, tailFin, bevel, canopy);
+    group.add(aura, engine, engineLeft, engineRight, leftPod, rightPod, noseGlow, hull, body, tailFin, bevel, canopy, rails);
     group.scale.setScalar(0.82);
     return group;
   }
@@ -1572,10 +1625,28 @@ export class UniverseRenderer {
       const rel = subVec(pilot.position, state.player.position);
       const d = distance(state.player.position, pilot.position);
       group.visible = d < state.renderDistance;
-      group.position.set(rel.x * RENDER_SCALE, rel.y * RENDER_SCALE, rel.z * RENDER_SCALE);
-      group.rotation.x = -pilot.pitch * 0.5;
-      group.rotation.y = pilot.yaw;
-      group.rotation.z = Math.sin(elapsed * 2.7 + pilot.id.length) * 0.035;
+      const viewYaw = state.player.yaw + state.player.cameraYawOffset;
+      const viewForward = this.viewForward(state);
+      const side = { x: Math.cos(viewYaw), y: 0, z: -Math.sin(viewYaw) };
+      const closeBlend = 1 - THREE.MathUtils.clamp(d / 1200, 0, 1);
+      const closeRel = {
+        x: viewForward.x * 1050 + side.x * 320,
+        y: viewForward.y * 1050 + 260,
+        z: viewForward.z * 1050 + side.z * 320
+      };
+      const visualRel = {
+        x: rel.x * (1 - closeBlend) + closeRel.x * closeBlend,
+        y: rel.y * (1 - closeBlend) + closeRel.y * closeBlend,
+        z: rel.z * (1 - closeBlend) + closeRel.z * closeBlend
+      };
+      const targetPosition = new THREE.Vector3(visualRel.x * RENDER_SCALE, visualRel.y * RENDER_SCALE, visualRel.z * RENDER_SCALE);
+      const visualPosition = (group.userData.visualPosition as THREE.Vector3 | undefined) ?? targetPosition.clone();
+      if (visualPosition.distanceTo(targetPosition) > 120) visualPosition.copy(targetPosition);
+      visualPosition.lerp(targetPosition, Math.min(1, dt * 12));
+      group.userData.visualPosition = visualPosition;
+      group.position.copy(visualPosition);
+      group.rotation.set(pilot.pitch * 0.45, pilot.yaw + Math.PI, Math.sin(elapsed * 2.7 + pilot.id.length) * 0.035);
+      group.scale.setScalar(THREE.MathUtils.clamp(0.34 + Math.sqrt(Math.max(d, 1)) * 0.0022, 0.38, 0.68));
       const engine = group.userData.engine as THREE.Sprite | undefined;
       if (engine) {
         const pulse = 1 + Math.sin(elapsed * 9.5) * 0.16;
@@ -1584,9 +1655,9 @@ export class UniverseRenderer {
       const label = group.userData.label as THREE.Object3D | undefined;
       if (label) {
         label.visible = d < 26000;
-        label.position.y = 1.9 + Math.sin(elapsed * 2.3) * 0.08;
+        label.position.y = 2.25 + Math.sin(elapsed * 2.3) * 0.08;
       }
-      group.position.y += Math.sin(elapsed * 3 + pilot.id.length) * dt * 0.6;
+      group.position.y += Math.sin(elapsed * 3 + pilot.id.length) * 0.025;
     }
   }
 
@@ -1594,16 +1665,16 @@ export class UniverseRenderer {
     const tint = pilot.color || COLORS.cyan;
     const group = this.makeCameraShip(tint);
     group.userData.tint = tint;
-    group.scale.setScalar(1);
+    group.scale.setScalar(0.48);
 
     const label = createLabelSprite(pilot.name || 'Friend', tint);
-    label.position.y = 2.2;
-    label.scale.multiplyScalar(0.42);
+    label.position.y = 2.25;
+    label.scale.multiplyScalar(0.36);
     group.userData.label = label;
 
-    const ring = this.trackMarker(2.2, tint);
+    const ring = this.trackMarker(1.55, tint);
     ring.rotation.x = Math.PI / 2;
-    ring.scale.y = 0.62;
+    ring.scale.y = 0.44;
     group.add(ring, label);
     return group;
   }
@@ -3675,15 +3746,17 @@ class CinematicDirector {
 
 class WarpTunnel {
   root = new THREE.Group();
+  private streakCount = 1220;
   private streaks: THREE.LineSegments;
   private geometry: THREE.BufferGeometry;
   private rings: THREE.Mesh[] = [];
   private ribbons: THREE.Line[] = [];
   private chargeCore: THREE.Sprite;
+  private tunnelGlow: THREE.Sprite;
   private companion: THREE.Group;
 
   constructor() {
-    const positions = new Float32Array(760 * 6);
+    const positions = new Float32Array(this.streakCount * 6);
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     this.streaks = new THREE.LineSegments(
@@ -3708,33 +3781,47 @@ class WarpTunnel {
     );
     this.chargeCore.position.z = 16;
     this.root.add(this.chargeCore);
-    for (let i = 0; i < 18; i += 1) {
+    this.tunnelGlow = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: createGlowTexture(993, COLORS.blue),
+        color: COLORS.cyan,
+        transparent: true,
+        opacity: 0.16,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    this.tunnelGlow.position.z = 54;
+    this.tunnelGlow.scale.set(38, 38, 1);
+    this.root.add(this.tunnelGlow);
+    for (let i = 0; i < 30; i += 1) {
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(3 + i * 0.58, 0.03, 8, 96),
-        new THREE.MeshBasicMaterial({ color: i % 2 ? COLORS.blue : COLORS.purple, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending })
+        new THREE.TorusGeometry(2.4 + i * 0.52, 0.02 + (i % 4) * 0.004, 8, 128),
+        new THREE.MeshBasicMaterial({ color: i % 3 === 0 ? COLORS.cyan : i % 2 ? COLORS.blue : COLORS.purple, transparent: true, opacity: 0.24, blending: THREE.AdditiveBlending, depthWrite: false })
       );
-      ring.position.z = 10 + i * 7;
+      ring.position.z = 8 + i * 5.4;
+      ring.rotation.x = i * 0.018;
       this.rings.push(ring);
       this.root.add(ring);
     }
-    for (let ribbonIndex = 0; ribbonIndex < 7; ribbonIndex += 1) {
+    for (let ribbonIndex = 0; ribbonIndex < 14; ribbonIndex += 1) {
       const points: number[] = [];
-      const phase = (ribbonIndex / 7) * Math.PI * 2;
-      for (let k = 0; k < 170; k += 1) {
-        const u = k / 169;
-        const z = 8 + u * 228;
-        const radius = 3.2 + Math.sin(u * Math.PI) * (3.5 + ribbonIndex * 0.22);
-        const twist = phase + u * Math.PI * (5.5 + ribbonIndex * 0.38);
-        points.push(Math.cos(twist) * radius, Math.sin(twist) * radius * 0.62, z);
+      const phase = (ribbonIndex / 14) * Math.PI * 2;
+      for (let k = 0; k < 220; k += 1) {
+        const u = k / 219;
+        const z = 5 + u * 292;
+        const radius = 2.2 + Math.sin(u * Math.PI) * (4.8 + ribbonIndex * 0.13);
+        const twist = phase + u * Math.PI * (7.8 + ribbonIndex * 0.22);
+        points.push(Math.cos(twist) * radius, Math.sin(twist) * radius * 0.58, z);
       }
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
       const line = new THREE.Line(
         geometry,
         new THREE.LineBasicMaterial({
-          color: ribbonIndex % 2 ? COLORS.purple : COLORS.cyan,
+          color: ribbonIndex % 3 === 0 ? COLORS.softWhite : ribbonIndex % 2 ? COLORS.purple : COLORS.cyan,
           transparent: true,
-          opacity: 0.28,
+          opacity: 0.24,
           blending: THREE.AdditiveBlending,
           depthWrite: false
         })
@@ -3779,21 +3866,22 @@ class WarpTunnel {
     const tunnelFade = exiting ? 1 - exitProgress : 1;
     const destinationColor = state.warp.destinationColor || COLORS.cyan;
     (this.chargeCore.material as THREE.SpriteMaterial).color.setHex(mixHex(destinationColor, COLORS.cyan, 0.45));
+    (this.tunnelGlow.material as THREE.SpriteMaterial).color.setHex(mixHex(destinationColor, COLORS.blue, 0.42));
     (this.streaks.material as THREE.LineBasicMaterial).opacity = (jumping ? 0.92 : 0.55) * tunnelFade;
-    for (let i = 0; i < 760; i += 1) {
+    for (let i = 0; i < this.streakCount; i += 1) {
       const a = i * 12.9898;
       const angle = (Math.sin(a) * 43758.5453) % (Math.PI * 2);
-      const phaseSpeed = aligning ? 10 : charging ? 7 + chargeProgress * 12 : jumping ? 58 : 22 * (1 - exitProgress);
-      const z1 = ((i * 5.1 + t * (phaseSpeed + (i % 37)) * (jumping ? 1.35 : 0.72)) % 235) + 7;
-      const z2 = z1 + (aligning ? 3 : charging ? 5 + chargeProgress * 7 : jumping ? 22 : 10) + (i % 13);
+      const phaseSpeed = aligning ? 10 : charging ? 8 + chargeProgress * 18 : jumping ? 88 : 28 * (1 - exitProgress);
+      const z1 = ((i * 4.2 + t * (phaseSpeed + (i % 53)) * (jumping ? 1.62 : 0.76)) % 300) + 5;
+      const z2 = z1 + (aligning ? 3 : charging ? 7 + chargeProgress * 12 : jumping ? 34 : 12) + (i % 19);
       const baseR = aligning
-        ? 7.8 - chargeProgress * 9
+        ? 8.6 - chargeProgress * 9.6
         : charging
-          ? 8.4 * (1 - chargeProgress) + 0.9
+          ? 9.4 * (1 - chargeProgress) + 0.8
           : exiting
-            ? 10.5 * (1 - exitProgress) + 1.5
-            : 1.5 + jumpProgress * 10.5;
-      const r = Math.max(0.8, baseR) + (i % 61) * (jumping ? 0.2 : 0.09);
+            ? 12.2 * (1 - exitProgress) + 1.5
+            : 1.0 + jumpProgress * 12.8;
+      const r = Math.max(0.7, baseR) + (i % 83) * (jumping ? 0.19 : 0.08);
       const x = Math.cos(angle) * r;
       const y = Math.sin(angle) * r * 0.62;
       position.setXYZ(i * 2, x, y, z1);
@@ -3806,11 +3894,16 @@ class WarpTunnel {
     this.chargeCore.position.z = exiting ? 26 - exitProgress * 20 : charging || aligning ? 12 : 20;
     this.chargeCore.scale.setScalar(charging || aligning ? 4 + chargeProgress * 22 : exiting ? 18 * (1 - exitProgress) + 5 : 15 + Math.sin(t * 14) * 2);
     (this.chargeCore.material as THREE.SpriteMaterial).opacity = exiting ? 0.48 * (1 - exitProgress) : charging || aligning ? 0.22 + chargeProgress * 0.58 : 0.38;
+    this.tunnelGlow.scale.setScalar(exiting ? 42 * (1 - exitProgress) : charging || aligning ? 18 + chargeProgress * 34 : 46 + Math.sin(t * 5) * 3);
+    (this.tunnelGlow.material as THREE.SpriteMaterial).opacity = (jumping ? 0.24 : charging || aligning ? 0.1 + chargeProgress * 0.18 : 0.12) * tunnelFade;
     this.rings.forEach((ring, i) => {
-      ring.rotation.z -= dt * (aligning ? 0.45 + i * 0.025 : charging ? 0.8 + i * 0.04 : jumping ? 1.35 + i * 0.045 : 0.65);
-      ring.position.z = charging || aligning ? 12 + i * (2.5 + chargeProgress * 1.9) : exiting ? 18 + i * 5.2 - exitProgress * 12 : 8 + i * 7;
-      ring.scale.setScalar((charging || aligning ? 0.36 + chargeProgress * 1.05 : exiting ? 1.35 - exitProgress * 0.68 : 1.08 + jumpProgress * 0.34) + Math.sin(t * 4 + i) * 0.08);
-      (ring.material as THREE.MeshBasicMaterial).opacity = exiting ? Math.max(0.04, 0.24 * (1 - exitProgress)) : charging || aligning ? 0.16 + chargeProgress * 0.18 : 0.22;
+      ring.rotation.z -= dt * (aligning ? 0.48 + i * 0.02 : charging ? 0.95 + i * 0.035 : jumping ? 1.75 + i * 0.04 : 0.7);
+      ring.rotation.x += dt * (jumping ? 0.025 : 0.01);
+      ring.position.z = charging || aligning ? 10 + i * (2.0 + chargeProgress * 1.65) : exiting ? 14 + i * 4.7 - exitProgress * 18 : 6 + i * 5.4;
+      ring.scale.setScalar((charging || aligning ? 0.28 + chargeProgress * 1.2 : exiting ? 1.42 - exitProgress * 0.72 : 1.02 + jumpProgress * 0.48) + Math.sin(t * 5 + i) * 0.075);
+      const ringMat = ring.material as THREE.MeshBasicMaterial;
+      ringMat.color.setHex(i % 3 === 0 ? mixHex(destinationColor, COLORS.white, 0.28) : i % 2 ? COLORS.purple : COLORS.cyan);
+      ringMat.opacity = exiting ? Math.max(0.035, 0.25 * (1 - exitProgress)) : charging || aligning ? 0.14 + chargeProgress * 0.2 : 0.25;
     });
     this.ribbons.forEach((ribbon, i) => {
       ribbon.rotation.z += dt * (0.42 + i * 0.055 + jumpProgress * 0.75);

@@ -62,6 +62,8 @@ class GalacticEvoRoom extends Room {
     this.onMessage('player:update', (client, data) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || !data) return;
+      player.name = cleanName(data.name || player.name);
+      player.color = Number(data.color) || player.color;
       player.x = Number(data.x) || 0;
       player.y = Number(data.y) || 0;
       player.z = Number(data.z) || 0;
@@ -115,7 +117,7 @@ class GalacticEvoRoom extends Room {
   onJoin(client, options) {
     const player = new Player({
       name: cleanName(options.name),
-      color: colorFromSession(client.sessionId),
+      color: Number(options.color) || colorFromSession(client.sessionId),
       x: Number(options.x) || 0,
       y: Number(options.y) || 0,
       z: Number(options.z) || 0,
