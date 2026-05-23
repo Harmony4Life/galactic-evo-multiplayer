@@ -13,6 +13,8 @@ const Player = schema({
   z: 'number',
   yaw: 'number',
   pitch: 'number',
+  hp: 'number',
+  warpPhase: 'string',
   updatedAt: 'number'
 });
 
@@ -69,6 +71,8 @@ class GalacticEvoRoom extends Room {
       player.z = Number(data.z) || 0;
       player.yaw = Number(data.yaw) || 0;
       player.pitch = Number(data.pitch) || 0;
+      player.hp = Math.max(0, Math.min(100, Number(data.hp) || 100));
+      player.warpPhase = String(data.warpPhase || 'idle').slice(0, 12);
       player.updatedAt = Date.now();
     });
 
@@ -103,6 +107,28 @@ class GalacticEvoRoom extends Room {
               duration: Math.max(5, Math.min(15, Number(data.destination.duration) || 5))
             }
           : undefined,
+        shot: data.shot && typeof data.shot === 'object'
+          ? {
+              id: String(data.shot.id || '').slice(0, 80),
+              side: Number(data.shot.side) < 0 ? -1 : 1,
+              origin: {
+                x: Number(data.shot.origin?.x) || 0,
+                y: Number(data.shot.origin?.y) || 0,
+                z: Number(data.shot.origin?.z) || 0
+              },
+              end: {
+                x: Number(data.shot.end?.x) || 0,
+                y: Number(data.shot.end?.y) || 0,
+                z: Number(data.shot.end?.z) || 0
+              },
+              yaw: Number(data.shot.yaw) || 0,
+              pitch: Number(data.shot.pitch) || 0,
+              targetId: String(data.shot.targetId || ''),
+              hit: Boolean(data.shot.hit),
+              damage: Math.max(0, Math.min(20, Number(data.shot.damage) || 0)),
+              targetHp: Math.max(0, Math.min(100, Number(data.shot.targetHp) || 0))
+            }
+          : undefined,
         sentAt: Date.now()
       });
     };
@@ -113,6 +139,7 @@ class GalacticEvoRoom extends Room {
     this.onMessage('squad:accept', (client, data) => peerRelay('squad:accept', client, data));
     this.onMessage('squad:leave', (client, data) => peerRelay('squad:leave', client, data));
     this.onMessage('group:warp', (client, data) => peerRelay('group:warp', client, data));
+    this.onMessage('combat:shot', (client, data) => peerRelay('combat:shot', client, data));
   }
 
   onJoin(client, options) {
@@ -124,6 +151,8 @@ class GalacticEvoRoom extends Room {
       z: Number(options.z) || 0,
       yaw: Number(options.yaw) || 0,
       pitch: Number(options.pitch) || 0,
+      hp: 100,
+      warpPhase: 'idle',
       updatedAt: Date.now()
     });
 

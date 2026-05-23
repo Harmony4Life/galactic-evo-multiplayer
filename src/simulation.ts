@@ -11,6 +11,14 @@ export const WARP_ALIGN_DURATION = 2.15;
 export const WARP_CHARGE_DURATION = 3.0;
 export const WARP_EXIT_DURATION = 1.15;
 export const SPECIAL_PLANET_DURATION = 12;
+export const GROUP_WARP_PROXIMITY = 10000;
+export const COMBAT_MAX_HP = 100;
+export const COMBAT_REGEN_INTERVAL = 8;
+export const COMBAT_REGEN_AMOUNT = 2;
+export const COMBAT_DAMAGE = 5;
+export const COMBAT_FIRE_INTERVAL = 0.18;
+export const COMBAT_OVERHEAT_COOLDOWN = 4;
+export const COMBAT_LOCK_COOLDOWN = 5;
 
 export const COLORS = {
   black: 0x000000,
@@ -122,6 +130,8 @@ export interface RemotePlayerState {
   position: Vec3;
   yaw: number;
   pitch: number;
+  hp: number;
+  warpPhase: WarpPhase;
   updatedAt: number;
 }
 
@@ -148,6 +158,19 @@ export interface WarpPayload {
   duration?: number;
 }
 
+export interface CombatShotPayload {
+  id: string;
+  side: -1 | 1;
+  origin: Vec3;
+  end: Vec3;
+  yaw: number;
+  pitch: number;
+  targetId?: string;
+  hit: boolean;
+  damage: number;
+  targetHp?: number;
+}
+
 export interface MultiplayerHooks {
   onLocalEventStart?: (event: WorldEvent) => void;
   onWarpRequest?: (pilot: RemotePlayerState) => void;
@@ -156,6 +179,7 @@ export interface MultiplayerHooks {
   onSquadAccept?: (targetId: string) => void;
   onSquadLeave?: () => void;
   onGroupWarpStart?: (payload: WarpPayload) => void;
+  onCombatShot?: (payload: CombatShotPayload) => void;
 }
 
 export interface WarpState {
@@ -190,6 +214,46 @@ export interface SpecialSceneState {
   timer: number;
   duration: number;
   sequence: number;
+}
+
+export interface CombatTrail {
+  id: string;
+  origin: Vec3;
+  end: Vec3;
+  color: number;
+  age: number;
+  ttl: number;
+  hit: boolean;
+}
+
+export interface DamageNumber {
+  id: string;
+  position: Vec3;
+  text: string;
+  color: number;
+  age: number;
+  ttl: number;
+}
+
+export interface CombatState {
+  enabled: boolean;
+  hp: number;
+  regenTimer: number;
+  heat: number;
+  firing: boolean;
+  fireTimer: number;
+  turretSide: -1 | 1;
+  overheated: boolean;
+  overheatTimer: number;
+  targetLockId: string | null;
+  lockCooldown: number;
+  lockBreakTimer: number;
+  engagedTimer: number;
+  lastDamage: { name: string; damage: number; remainingHp: number; timer: number } | null;
+  lastIncoming: { name: string; damage: number; hp: number; timer: number } | null;
+  trails: CombatTrail[];
+  damageNumbers: DamageNumber[];
+  shotSequence: number;
 }
 
 class RNG {
@@ -539,6 +603,26 @@ export class GameState {
   squadMemberId: string | null = null;
   incomingWarpRequest: { fromId: string; name: string; color: number; position: Vec3 } | null = null;
   pendingSquadInvite: { fromId: string; name: string; color: number } | null = null;
+  combat: CombatState = {
+    enabled: false,
+    hp: COMBAT_MAX_HP,
+    regenTimer: 0,
+    heat: 0,
+    firing: false,
+    fireTimer: 0,
+    turretSide: -1,
+    overheated: false,
+    overheatTimer: 0,
+    targetLockId: null,
+    lockCooldown: 0,
+    lockBreakTimer: 0,
+    engagedTimer: 0,
+    lastDamage: null,
+    lastIncoming: null,
+    trails: [],
+    damageNumbers: [],
+    shotSequence: 0
+  };
   multiplayer: MultiplayerStatus = {
     enabled: false,
     connected: false,
@@ -571,6 +655,7 @@ export class GameState {
     this.updateCutscene(dt);
     this.updateWarp(dt);
     this.updateSpecialScene(dt);
+    this.updateCombat(dt);
   }
 
   move(delta: Vec3) {
@@ -578,6 +663,91 @@ export class GameState {
     this.player.position.x += delta.x;
     this.player.position.y += delta.y;
     this.player.position.z += delta.z;
+  }
+
+  setCombatFiring(active: boolean) {
+    this.combat.firing = active && this.combat.enabled && !this.warp.active && !this.cutscene.active && !this.specialScene.active;
+  }
+
+  inCombat() {
+    return this.combat.enabled && this.combat.engagedTimer > 0;
+  }
+
+  canBeginWarp(options: { fromNetwork?: boolean } = {}) {
+    if (options.fromNetwork) return true;
+    if (this.inCombat()) {
+      this.setMessage('Warp systems are locked during combat.', 2.6);
+      return false;
+    }
+    return true;
+  }
+
+  cancelWarp() {
+    if (!this.warp.active || (this.warp.phase !== 'align' && this.warp.phase !== 'charge')) return false;
+    const name = this.warp.destinationName || 'destination';
+    this.warp.active = false;
+    this.warp.phase = 'idle';
+    this.warp.timer = 0;
+    this.warp.destination = null;
+    this.warp.groupWarp = false;
+    this.warp.companionId = null;
+    this.warp.duration = WARP_MIN_DURATION;
+    this.setMessage(`Warp to ${name} cancelled.`, 2.6);
+    return true;
+  }
+
+  tryTargetLock() {
+    if (!this.combat.enabled) {
+      this.setMessage('Combat systems are offline until another pilot joins.', 2.6);
+      return true;
+    }
+    if (this.combat.lockCooldown > 0) {
+      this.setMessage(`Target lock cooling down: ${this.combat.lockCooldown.toFixed(1)}s.`, 2);
+      return true;
+    }
+    if (this.combat.targetLockId) {
+      const pilot = this.remotePlayers.get(this.combat.targetLockId);
+      this.combat.targetLockId = null;
+      this.setMessage(pilot ? `Target lock released: ${pilot.name}.` : 'Target lock released.', 2);
+      return true;
+    }
+    const target = this.bestAimTarget(0.18);
+    if (!target) {
+      this.setMessage('No pilot in lock cone.', 2.2);
+      return true;
+    }
+    this.combat.targetLockId = target.id;
+    this.trackedRemotePlayerId = target.id;
+    this.combat.lockBreakTimer = 0;
+    this.combat.engagedTimer = Math.max(this.combat.engagedTimer, 8);
+    this.setMessage(`Target locked: ${target.name}.`, 2.8);
+    return true;
+  }
+
+  receiveRemoteCombatShot(pilot: RemotePlayerState, payload: CombatShotPayload) {
+    const isLocalTarget = payload.targetId === this.multiplayer.sessionId;
+    const numberPosition = isLocalTarget ? this.player.position : payload.end;
+    this.combat.trails.push({
+      id: payload.id || `remote-shot-${Date.now()}`,
+      origin: copyVec(payload.origin),
+      end: copyVec(payload.end),
+      color: pilot.color || COLORS.pink,
+      age: 0,
+      ttl: 0.42,
+      hit: !!payload.hit
+    });
+    this.combat.engagedTimer = Math.max(this.combat.engagedTimer, 8);
+    if (payload.hit) {
+      this.combat.damageNumbers.push({
+        id: `remote-damage-${payload.id}`,
+        position: copyVec(numberPosition),
+        text: `-${payload.damage}`,
+        color: isLocalTarget ? COLORS.red : COLORS.gold,
+        age: 0,
+        ttl: 1.1
+      });
+      if (isLocalTarget) this.applyCombatDamage(payload.damage, pilot);
+    }
   }
 
   allTrackable() {
@@ -738,6 +908,7 @@ export class GameState {
   }
 
   beginWarp(destination: Trackable, options: { fromNetwork?: boolean; groupWarp?: boolean; companionId?: string | null; duration?: number } = {}) {
+    if (!this.canBeginWarp(options)) return;
     const f = forwardVector(this.player);
     const isSpecialPlanet =
       !isEvent(destination) &&
@@ -752,7 +923,7 @@ export class GameState {
     const shouldGroupWarp =
       !options.fromNetwork &&
       !!squadPilot &&
-      distance(this.player.position, squadPilot.position) <= 2000;
+      distance(this.player.position, squadPilot.position) <= GROUP_WARP_PROXIMITY;
     this.configureWarp({
       destination,
       focus: destination.position,
@@ -786,6 +957,7 @@ export class GameState {
     color: number = COLORS.cyan,
     options: { fromNetwork?: boolean; groupWarp?: boolean; companionId?: string | null; exactEnd?: boolean; duration?: number } = {}
   ) {
+    if (!this.canBeginWarp(options)) return;
     const f = forwardVector(this.player);
     const end = options.exactEnd
       ? copyVec(position)
@@ -952,6 +1124,10 @@ export class GameState {
       return false;
     }
 
+    if (this.warp.active && code === 'KeyX') {
+      return this.cancelWarp();
+    }
+
     if (this.cutscene.active || this.warp.active || this.specialScene.active) {
       return false;
     }
@@ -1023,6 +1199,9 @@ export class GameState {
     }
     if (code === 'KeyR' && this.incomingWarpRequest) {
       return this.acceptIncomingWarpRequest();
+    }
+    if (code === 'KeyI') {
+      return this.tryTargetLock();
     }
     if (code === 'KeyF') {
       this.triggerAction();
@@ -1100,6 +1279,244 @@ export class GameState {
     }
 
     return false;
+  }
+
+  private aimVector() {
+    const pitch = clamp(this.player.pitch + this.player.cameraPitchOffset, -1.32, 1.32);
+    const yaw = this.player.yaw + this.player.cameraYawOffset;
+    const cp = Math.cos(pitch);
+    return {
+      x: Math.sin(yaw) * cp,
+      y: Math.sin(pitch),
+      z: Math.cos(yaw) * cp
+    };
+  }
+
+  private normalizeVec(v: Vec3) {
+    const len = Math.max(0.0001, Math.hypot(v.x, v.y, v.z));
+    return { x: v.x / len, y: v.y / len, z: v.z / len };
+  }
+
+  private angleBetween(a: Vec3, b: Vec3) {
+    const na = this.normalizeVec(a);
+    const nb = this.normalizeVec(b);
+    return Math.acos(clamp(na.x * nb.x + na.y * nb.y + na.z * nb.z, -1, 1));
+  }
+
+  private bestAimTarget(maxAngle: number) {
+    const aim = this.aimVector();
+    let best: RemotePlayerState | null = null;
+    let bestScore = Infinity;
+    for (const pilot of this.remotePlayers.values()) {
+      if ((pilot.hp ?? COMBAT_MAX_HP) <= 0) continue;
+      const toPilot = subVec(pilot.position, this.player.position);
+      const d = Math.max(1, Math.hypot(toPilot.x, toPilot.y, toPilot.z));
+      if (d > 36000) continue;
+      const angle = this.angleBetween(aim, toPilot);
+      const angularRadius = clamp(620 / d, 0.012, 0.09);
+      if (angle > maxAngle + angularRadius) continue;
+      const score = angle * 100000 + d * 0.002;
+      if (score < bestScore) {
+        best = pilot;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+
+  private breakTargetLock(reason = 'Target lock broken.') {
+    if (!this.combat.targetLockId) return;
+    this.combat.targetLockId = null;
+    this.combat.lockCooldown = COMBAT_LOCK_COOLDOWN;
+    this.combat.lockBreakTimer = 0;
+    this.setMessage(reason, 2.8);
+  }
+
+  private updateTargetLock(dt: number) {
+    if (!this.combat.targetLockId) return;
+    const target = this.remotePlayers.get(this.combat.targetLockId);
+    if (!target || (target.hp ?? COMBAT_MAX_HP) <= 0) {
+      this.breakTargetLock('Target lock lost.');
+      return;
+    }
+    const toTarget = subVec(target.position, this.player.position);
+    const d = distance(this.player.position, target.position);
+    const angle = this.angleBetween(this.aimVector(), toTarget);
+    if (d > 42000 || angle > 0.74) {
+      this.combat.lockBreakTimer += dt;
+      if (this.combat.lockBreakTimer > 0.36) this.breakTargetLock('Target outmaneuvered lock.');
+      return;
+    }
+    this.combat.lockBreakTimer = Math.max(0, this.combat.lockBreakTimer - dt * 2);
+    const aim = angleToPoint(this.player.position, target.position);
+    const tracking = clamp(dt * 2.7, 0, 0.18);
+    this.player.yaw = lerpAngle(this.player.yaw, aim.yaw, tracking);
+    this.player.pitch = lerpAngle(this.player.pitch, aim.pitch, tracking);
+    this.player.cameraYawOffset *= Math.max(0, 1 - dt * 3.4);
+    this.player.cameraPitchOffset *= Math.max(0, 1 - dt * 3.4);
+  }
+
+  private fireCombatShot() {
+    if (!this.combat.enabled || this.warp.active || this.cutscene.active || this.specialScene.active) return;
+    const side = this.combat.turretSide;
+    this.combat.turretSide = side === -1 ? 1 : -1;
+    this.combat.shotSequence += 1;
+
+    const forward = this.aimVector();
+    const right = rightVector(this.player);
+    let direction = forward;
+    const locked = this.combat.targetLockId ? this.remotePlayers.get(this.combat.targetLockId) : null;
+    if (locked && (locked.hp ?? COMBAT_MAX_HP) > 0) {
+      const toLocked = this.normalizeVec(subVec(locked.position, this.player.position));
+      direction = this.normalizeVec({
+        x: forward.x * 0.62 + toLocked.x * 0.38,
+        y: forward.y * 0.62 + toLocked.y * 0.38,
+        z: forward.z * 0.62 + toLocked.z * 0.38
+      });
+    }
+
+    const origin = addVec(
+      addVec(this.player.position, scaleVec(right, side * 245)),
+      { x: direction.x * 340, y: direction.y * 340 - 70, z: direction.z * 340 }
+    );
+    const maxRange = 36000;
+    const target = locked ?? this.bestAimTarget(0.07);
+    let hit = false;
+    let damage = 0;
+    let targetHp: number | undefined;
+    let end = addVec(origin, scaleVec(direction, maxRange));
+
+    if (target) {
+      const toTarget = subVec(target.position, origin);
+      const d = Math.max(1, Math.hypot(toTarget.x, toTarget.y, toTarget.z));
+      const angle = this.angleBetween(direction, toTarget);
+      const cone = (this.combat.targetLockId === target.id ? 0.16 : 0.055) + clamp(720 / d, 0.012, 0.08);
+      if (angle <= cone && d <= maxRange) {
+        hit = true;
+        damage = COMBAT_DAMAGE;
+        target.hp = Math.max(0, (target.hp ?? COMBAT_MAX_HP) - damage);
+        targetHp = target.hp;
+        end = copyVec(target.position);
+        this.combat.lastDamage = { name: target.name, damage, remainingHp: target.hp, timer: 4.5 };
+        this.combat.damageNumbers.push({
+          id: `damage-${this.combat.shotSequence}`,
+          position: copyVec(target.position),
+          text: `-${damage}`,
+          color: COLORS.gold,
+          age: 0,
+          ttl: 1.15
+        });
+      }
+    }
+
+    const id = `${Date.now().toString(36)}-${this.combat.shotSequence}`;
+    const trail = {
+      id,
+      origin,
+      end,
+      color: this.player.shipColor,
+      age: 0,
+      ttl: hit ? 0.5 : 0.34,
+      hit
+    };
+    this.combat.trails.push(trail);
+    this.combat.engagedTimer = Math.max(this.combat.engagedTimer, 10);
+    this.combat.heat = Math.min(100, this.combat.heat + 8.6);
+    if (this.combat.heat >= 100) {
+      this.combat.overheated = true;
+      this.combat.overheatTimer = COMBAT_OVERHEAT_COOLDOWN;
+      this.combat.firing = false;
+      this.setMessage('Turrets overheated. Cooling down.', 2.8);
+    }
+    this.multiplayerHooks.onCombatShot?.({
+      id,
+      side,
+      origin,
+      end,
+      yaw: this.player.yaw,
+      pitch: this.player.pitch,
+      targetId: target?.id,
+      hit,
+      damage,
+      targetHp
+    });
+  }
+
+  private applyCombatDamage(damage: number, pilot: RemotePlayerState) {
+    if (!this.combat.enabled || damage <= 0) return;
+    this.combat.hp = Math.max(0, this.combat.hp - damage);
+    this.combat.regenTimer = 0;
+    this.combat.engagedTimer = Math.max(this.combat.engagedTimer, 10);
+    this.combat.lastIncoming = { name: pilot.name, damage, hp: this.combat.hp, timer: 4.5 };
+    if (this.combat.hp <= 0) {
+      this.breakTargetLock('Ship disabled. Target lock lost.');
+      this.setMessage('Hull integrity critical. Drift and regenerate.', 4);
+    }
+  }
+
+  private updateCombat(dt: number) {
+    const enabled = this.multiplayer.connected && this.remotePlayers.size > 0;
+    this.combat.enabled = enabled;
+    if (!enabled) {
+      this.combat.firing = false;
+      this.combat.targetLockId = null;
+      this.combat.engagedTimer = 0;
+      this.combat.hp = COMBAT_MAX_HP;
+    }
+
+    this.combat.engagedTimer = Math.max(0, this.combat.engagedTimer - dt);
+    this.combat.lockCooldown = Math.max(0, this.combat.lockCooldown - dt);
+    if (this.combat.lastDamage) {
+      this.combat.lastDamage.timer -= dt;
+      if (this.combat.lastDamage.timer <= 0) this.combat.lastDamage = null;
+    }
+    if (this.combat.lastIncoming) {
+      this.combat.lastIncoming.timer -= dt;
+      if (this.combat.lastIncoming.timer <= 0) this.combat.lastIncoming = null;
+    }
+
+    if (enabled && this.combat.hp < COMBAT_MAX_HP) {
+      this.combat.regenTimer += dt;
+      if (this.combat.regenTimer >= COMBAT_REGEN_INTERVAL) {
+        this.combat.regenTimer = 0;
+        this.combat.hp = Math.min(COMBAT_MAX_HP, this.combat.hp + COMBAT_REGEN_AMOUNT);
+      }
+    }
+
+    if (this.combat.overheated) {
+      this.combat.overheatTimer -= dt;
+      this.combat.heat = Math.max(0, this.combat.heat - dt * 28);
+      if (this.combat.overheatTimer <= 0) {
+        this.combat.overheated = false;
+        this.combat.heat = Math.min(this.combat.heat, 42);
+        this.setMessage('Turrets cooled. Combat systems ready.', 2.2);
+      }
+    } else if (!this.combat.firing) {
+      this.combat.heat = Math.max(0, this.combat.heat - dt * 21);
+      this.combat.fireTimer = Math.min(this.combat.fireTimer, COMBAT_FIRE_INTERVAL);
+    }
+
+    this.updateTargetLock(dt);
+
+    if (enabled && this.combat.firing && !this.combat.overheated && this.combat.hp > 0) {
+      this.combat.fireTimer -= dt;
+      while (this.combat.fireTimer <= 0 && !this.combat.overheated) {
+        this.fireCombatShot();
+        this.combat.fireTimer += COMBAT_FIRE_INTERVAL;
+      }
+    }
+
+    for (let i = this.combat.trails.length - 1; i >= 0; i -= 1) {
+      const trail = this.combat.trails[i];
+      trail.age += dt;
+      if (trail.age >= trail.ttl) this.combat.trails.splice(i, 1);
+    }
+    for (let i = this.combat.damageNumbers.length - 1; i >= 0; i -= 1) {
+      const item = this.combat.damageNumbers[i];
+      item.age += dt;
+      item.position.y += dt * 420;
+      if (item.age >= item.ttl) this.combat.damageNumbers.splice(i, 1);
+    }
   }
 
   private updateOrbits(dt: number) {

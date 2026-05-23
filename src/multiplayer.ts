@@ -1,5 +1,5 @@
 import { Client, Room } from '@colyseus/sdk';
-import { COLORS, GameState, RemotePlayerState, WarpPayload, WorldEvent } from './simulation';
+import { COLORS, CombatShotPayload, COMBAT_MAX_HP, GameState, RemotePlayerState, WarpPayload, WarpPhase, WorldEvent } from './simulation';
 
 type PlayerPatch = {
   name?: string;
@@ -9,6 +9,8 @@ type PlayerPatch = {
   z?: number;
   yaw?: number;
   pitch?: number;
+  hp?: number;
+  warpPhase?: WarpPhase;
   updatedAt?: number;
 };
 
@@ -37,6 +39,7 @@ type PeerMessage = {
   y?: number;
   z?: number;
   destination?: WarpPayload;
+  shot?: CombatShotPayload;
   sentAt: number;
 };
 
@@ -120,6 +123,7 @@ export class MultiplayerClient {
     this.state.multiplayerHooks.onSquadAccept = (targetId) => this.sendSquadAccept(targetId);
     this.state.multiplayerHooks.onSquadLeave = () => this.sendSquadLeave();
     this.state.multiplayerHooks.onGroupWarpStart = (payload) => this.sendGroupWarp(payload);
+    this.state.multiplayerHooks.onCombatShot = (payload) => this.sendCombatShot(payload);
 
     this.joinButton?.addEventListener('click', () => void this.join());
     this.leaveButton?.addEventListener('click', () => void this.leave());
@@ -149,7 +153,9 @@ export class MultiplayerClient {
         y: position.y,
         z: position.z,
         yaw,
-        pitch
+        pitch,
+        hp: this.state.combat.hp,
+        warpPhase: this.state.warp.active ? this.state.warp.phase : 'idle'
       });
     } catch {
       this.setStatus('Connection hiccup while sending pilot position.', false);
@@ -206,6 +212,7 @@ export class MultiplayerClient {
       this.room.onMessage('squad:accept', (message: PeerMessage) => this.handleSquadAccept(message));
       this.room.onMessage('squad:leave', (message: PeerMessage) => this.handleSquadLeave(message));
       this.room.onMessage('group:warp', (message: PeerMessage) => this.handleGroupWarp(message));
+      this.room.onMessage('combat:shot', (message: PeerMessage) => this.handleCombatShot(message));
       this.room.onLeave(() => {
         this.room = null;
         this.client = null;
@@ -277,6 +284,8 @@ export class MultiplayerClient {
         },
         yaw: Number(player.yaw) || 0,
         pitch: Number(player.pitch) || 0,
+        hp: Math.max(0, Math.min(COMBAT_MAX_HP, Number(player.hp) || COMBAT_MAX_HP)),
+        warpPhase: player.warpPhase || 'idle',
         updatedAt: Number(player.updatedAt) || Date.now()
       });
       if (!this.state.trackedRemotePlayerId) this.state.trackedRemotePlayerId = id;
@@ -317,8 +326,15 @@ export class MultiplayerClient {
       color: this.state.player.shipColor,
       x: position.x,
       y: position.y,
-      z: position.z
+      z: position.z,
+      hp: this.state.combat.hp,
+      warpPhase: this.state.warp.active ? this.state.warp.phase : 'idle'
     };
+  }
+
+  private sendCombatShot(shot: CombatShotPayload) {
+    if (!this.room || !this.state.multiplayer.connected) return;
+    this.room.send('combat:shot', { targetId: shot.targetId || '', shot, ...this.localPeerPayload() });
   }
 
   private sendWarpRequest(pilot: RemotePlayerState) {
@@ -423,6 +439,13 @@ export class MultiplayerClient {
       }
     );
     this.state.setMessage(`${cleanName(message.name)} initiated squad warp.`, 4);
+  }
+
+  private handleCombatShot(message: PeerMessage) {
+    if (!this.room || message.originId === this.room.sessionId || !message.shot) return;
+    const pilot = this.state.remotePlayers.get(message.originId);
+    if (!pilot) return;
+    this.state.receiveRemoteCombatShot(pilot, message.shot);
   }
 
   private async copyInvite() {

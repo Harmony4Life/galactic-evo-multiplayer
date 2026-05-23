@@ -14,6 +14,8 @@ function normalizeCode(event: KeyboardEvent) {
     e: 'KeyE',
     f: 'KeyF',
     h: 'KeyH',
+    i: 'KeyI',
+    j: 'KeyJ',
     m: 'KeyM',
     t: 'KeyT',
     u: 'KeyU',
@@ -149,6 +151,14 @@ export class InputController {
   }
 
   update(dt: number) {
+    this.state.setCombatFiring(
+      this.keys.has('KeyJ') &&
+        !this.state.cutscene.active &&
+        !this.state.warp.active &&
+        !this.state.specialScene.active &&
+        !this.state.fullMapOpen &&
+        !this.hud.isPointerBlocked()
+    );
     if (this.state.cutscene.active || this.state.warp.active || this.state.specialScene.active) return;
     if (this.state.fullMapOpen) return;
 

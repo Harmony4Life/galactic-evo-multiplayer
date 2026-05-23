@@ -30,6 +30,7 @@ export class Hud {
   private topHud = document.querySelector<HTMLDivElement>('#topHud')!;
   private promptChip = document.querySelector<HTMLDivElement>('#promptChip')!;
   private messageChip = document.querySelector<HTMLDivElement>('#messageChip')!;
+  private combatPanel = document.querySelector<HTMLDivElement>('#combatPanel')!;
   private scanPanel = document.querySelector<HTMLDivElement>('#scanPanel')!;
   private menuPanel = document.querySelector<HTMLDivElement>('#menuPanel')!;
   private miniMapWrap = document.querySelector<HTMLDivElement>('#miniMapWrap')!;
@@ -74,6 +75,7 @@ export class Hud {
     this.renderTopHud();
     this.renderPrompt();
     this.renderMessage();
+    this.renderCombatPanel();
     this.renderScanPanel();
     this.renderMenus();
     this.renderMinimap();
@@ -116,14 +118,78 @@ export class Hud {
   private renderPrompt() {
     const locked = document.pointerLockElement !== null;
     const lines = locked
-      ? 'WASD move | QE vertical | Shift/Alt/Ctrl boost | B boost lock | mouse/arrow look | Space scan | F trigger | H warp | R accept RTW'
-      : 'Drag flight view to look around your ship | click to engage mouse look | T tracker | Y events | U special planets | M map';
+      ? 'WASD move | QE vertical | Shift/Alt/Ctrl boost | B boost lock | mouse/arrow look | Space scan | J turrets | I lock | H warp | X cancel'
+      : 'Drag flight view to look around your ship | click for mouse look | J turrets | I lock | T tracker | Y events | U special | M map';
     this.promptChip.textContent = lines;
   }
 
   private renderMessage() {
     this.messageChip.classList.toggle('hidden', this.state.messageTimer <= 0);
     this.messageChip.textContent = this.state.message;
+  }
+
+  private renderCombatPanel() {
+    const combat = this.state.combat;
+    const target =
+      (combat.targetLockId ? this.state.remotePlayers.get(combat.targetLockId) : null) ??
+      (this.state.trackedRemotePlayerId ? this.state.remotePlayers.get(this.state.trackedRemotePlayerId) : null) ??
+      Array.from(this.state.remotePlayers.values())[0] ??
+      null;
+    const shouldShow =
+      combat.enabled ||
+      combat.heat > 1 ||
+      combat.overheated ||
+      !!combat.lastDamage ||
+      !!combat.lastIncoming ||
+      !!target;
+    this.combatPanel.classList.toggle('hidden', !shouldShow);
+    if (!shouldShow) return;
+
+    const heat = Math.max(0, Math.min(100, combat.heat));
+    const hp = Math.max(0, Math.min(100, combat.hp));
+    const targetHp = target ? Math.max(0, Math.min(100, target.hp ?? 100)) : 0;
+    const lockText = combat.targetLockId
+      ? `LOCKED: ${escapeHtml(target?.name ?? 'Pilot')}`
+      : combat.lockCooldown > 0
+        ? `LOCK COOLDOWN ${combat.lockCooldown.toFixed(1)}s`
+        : combat.enabled
+          ? 'NO LOCK'
+          : 'COMBAT OFFLINE';
+    const heatText = combat.overheated ? `OVERHEATED ${Math.max(0, combat.overheatTimer).toFixed(1)}s` : combat.firing ? 'FIRING' : 'READY';
+    const lastDamage = combat.lastDamage
+      ? `<div class="combat-callout good">Hit ${escapeHtml(combat.lastDamage.name)} for ${combat.lastDamage.damage}. ${Math.round(combat.lastDamage.remainingHp)} HP left.</div>`
+      : '';
+    const lastIncoming = combat.lastIncoming
+      ? `<div class="combat-callout bad">${escapeHtml(combat.lastIncoming.name)} hit you for ${combat.lastIncoming.damage}. ${Math.round(combat.lastIncoming.hp)} HP left.</div>`
+      : '';
+
+    this.combatPanel.innerHTML = `
+      <div class="combat-title">
+        <b>Combat</b>
+        <span>${lockText}</span>
+      </div>
+      <div class="combat-row">
+        <span>Hull</span>
+        <em>${Math.round(hp)} / 100</em>
+      </div>
+      <div class="combat-bar hull"><i style="width:${hp}%"></i></div>
+      <div class="combat-row">
+        <span>Turrets</span>
+        <em>${heatText}</em>
+      </div>
+      <div class="combat-bar heat"><i style="width:${heat}%"></i></div>
+      ${
+        target
+          ? `<div class="combat-target">
+              <span style="color:${hex(target.color)}">${escapeHtml(target.name)}</span>
+              <b>${Math.round(targetHp)} HP</b>
+              <div class="combat-bar target"><i style="width:${targetHp}%"></i></div>
+            </div>`
+          : '<div class="combat-empty">Join multiplayer to arm turrets.</div>'
+      }
+      ${lastDamage}
+      ${lastIncoming}
+    `;
   }
 
   private renderScanPanel() {
