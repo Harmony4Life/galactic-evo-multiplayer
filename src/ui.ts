@@ -147,7 +147,9 @@ export class Hud {
 
     const heat = Math.max(0, Math.min(100, combat.heat));
     const hp = Math.max(0, Math.min(100, combat.hp));
+    const shield = Math.max(0, Math.min(50, combat.shield));
     const targetHp = target ? Math.max(0, Math.min(100, target.hp ?? 100)) : 0;
+    const targetShield = target ? Math.max(0, Math.min(50, target.shield ?? 50)) : 0;
     const lockText = combat.targetLockId
       ? `LOCKED: ${escapeHtml(target?.name ?? 'Pilot')}`
       : combat.lockCooldown > 0
@@ -157,10 +159,10 @@ export class Hud {
           : 'COMBAT OFFLINE';
     const heatText = combat.overheated ? `OVERHEATED ${Math.max(0, combat.overheatTimer).toFixed(1)}s` : combat.firing ? 'FIRING' : 'READY';
     const lastDamage = combat.lastDamage
-      ? `<div class="combat-callout good">Hit ${escapeHtml(combat.lastDamage.name)} for ${combat.lastDamage.damage}. ${Math.round(combat.lastDamage.remainingHp)} HP left.</div>`
+      ? `<div class="combat-callout good">Hit ${escapeHtml(combat.lastDamage.name)} for ${combat.lastDamage.damage}. S ${Math.round(combat.lastDamage.remainingShield)} / H ${Math.round(combat.lastDamage.remainingHp)}.</div>`
       : '';
     const lastIncoming = combat.lastIncoming
-      ? `<div class="combat-callout bad">${escapeHtml(combat.lastIncoming.name)} hit you for ${combat.lastIncoming.damage}. ${Math.round(combat.lastIncoming.hp)} HP left.</div>`
+      ? `<div class="combat-callout bad">${escapeHtml(combat.lastIncoming.name)} hit you for ${combat.lastIncoming.damage}. S ${Math.round(combat.lastIncoming.shield)} / H ${Math.round(combat.lastIncoming.hp)}.</div>`
       : '';
 
     this.combatPanel.innerHTML = `
@@ -168,6 +170,11 @@ export class Hud {
         <b>Combat</b>
         <span>${lockText}</span>
       </div>
+      <div class="combat-row">
+        <span>Shield</span>
+        <em>${Math.round(shield)} / 50</em>
+      </div>
+      <div class="combat-bar shield"><i style="width:${shield * 2}%"></i></div>
       <div class="combat-row">
         <span>Hull</span>
         <em>${Math.round(hp)} / 100</em>
@@ -182,7 +189,8 @@ export class Hud {
         target
           ? `<div class="combat-target">
               <span style="color:${hex(target.color)}">${escapeHtml(target.name)}</span>
-              <b>${Math.round(targetHp)} HP</b>
+              <b>S ${Math.round(targetShield)} | H ${Math.round(targetHp)}</b>
+              <div class="combat-bar shield target-shield"><i style="width:${targetShield * 2}%"></i></div>
               <div class="combat-bar target"><i style="width:${targetHp}%"></i></div>
             </div>`
           : '<div class="combat-empty">Join multiplayer to arm turrets.</div>'

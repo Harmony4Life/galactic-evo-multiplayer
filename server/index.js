@@ -14,6 +14,7 @@ const Player = schema({
   yaw: 'number',
   pitch: 'number',
   hp: 'number',
+  shield: 'number',
   warpPhase: 'string',
   updatedAt: 'number'
 });
@@ -58,6 +59,17 @@ function clampNumber(value, min, max, fallback = min) {
   return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
 }
 
+function applyCombatDamage(player, damage) {
+  const amount = clampNumber(damage, 0, 20, 0);
+  const currentShield = clampNumber(player.shield, 0, 50, 50);
+  const currentHull = clampNumber(player.hp, 0, 100, 100);
+  const shieldDamage = Math.min(currentShield, amount);
+  const hullDamage = Math.max(0, amount - shieldDamage);
+  player.shield = Math.max(0, currentShield - shieldDamage);
+  player.hp = Math.max(0, currentHull - hullDamage);
+  player.updatedAt = Date.now();
+}
+
 class GalacticEvoRoom extends Room {
   maxClients = 2;
 
@@ -82,6 +94,7 @@ class GalacticEvoRoom extends Room {
       player.yaw = finiteNumber(data.yaw, player.yaw);
       player.pitch = finiteNumber(data.pitch, player.pitch);
       player.hp = clampNumber(data.hp, 0, 100, player.hp);
+      player.shield = clampNumber(data.shield, 0, 50, player.shield);
       player.warpPhase = String(data.warpPhase || 'idle').slice(0, 12);
       player.updatedAt = Date.now();
     });
@@ -107,6 +120,8 @@ class GalacticEvoRoom extends Room {
         x: finiteNumber(data.x),
         y: finiteNumber(data.y),
         z: finiteNumber(data.z),
+        hp: clampNumber(data.hp, 0, 100, 100),
+        shield: clampNumber(data.shield, 0, 50, 50),
         destination: data.destination && typeof data.destination === 'object'
           ? {
               x: finiteNumber(data.destination.x),
@@ -136,7 +151,9 @@ class GalacticEvoRoom extends Room {
               targetId: String(data.shot.targetId || ''),
               hit: Boolean(data.shot.hit),
               damage: clampNumber(data.shot.damage, 0, 20),
-              targetHp: clampNumber(data.shot.targetHp, 0, 100)
+              targetHp: clampNumber(data.shot.targetHp, 0, 100),
+              targetShield: clampNumber(data.shot.targetShield, 0, 50),
+              targetHull: clampNumber(data.shot.targetHull, 0, 100)
             }
           : undefined,
         sentAt: Date.now()
@@ -149,7 +166,28 @@ class GalacticEvoRoom extends Room {
     this.onMessage('squad:accept', (client, data) => peerRelay('squad:accept', client, data));
     this.onMessage('squad:leave', (client, data) => peerRelay('squad:leave', client, data));
     this.onMessage('group:warp', (client, data) => peerRelay('group:warp', client, data));
-    this.onMessage('combat:shot', (client, data) => peerRelay('combat:shot', client, data));
+    this.onMessage('combat:shot', (client, data) => {
+      const shot = data && typeof data.shot === 'object' ? data.shot : null;
+      const targetId = String(shot?.targetId || data?.targetId || '');
+      if (shot?.hit && targetId) {
+        const target = this.state.players.get(targetId);
+        if (target) {
+          applyCombatDamage(target, shot.damage);
+          data = {
+            ...data,
+            targetId,
+            shot: {
+              ...shot,
+              targetId,
+              targetHp: target.hp,
+              targetShield: target.shield,
+              targetHull: target.hp
+            }
+          };
+        }
+      }
+      peerRelay('combat:shot', client, data);
+    });
   }
 
   onJoin(client, options) {
@@ -161,7 +199,8 @@ class GalacticEvoRoom extends Room {
       z: finiteNumber(options.z),
       yaw: finiteNumber(options.yaw),
       pitch: finiteNumber(options.pitch),
-      hp: 100,
+      hp: clampNumber(options.hp, 0, 100, 100),
+      shield: clampNumber(options.shield, 0, 50, 50),
       warpPhase: 'idle',
       updatedAt: Date.now()
     });

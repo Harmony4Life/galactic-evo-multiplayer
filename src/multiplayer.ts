@@ -1,5 +1,5 @@
 import { Client, Room } from '@colyseus/sdk';
-import { COLORS, CombatShotPayload, COMBAT_MAX_HP, GameState, RemotePlayerState, WarpPayload, WarpPhase, WorldEvent } from './simulation';
+import { COLORS, CombatShotPayload, COMBAT_MAX_HP, COMBAT_MAX_SHIELD, GameState, RemotePlayerState, WarpPayload, WarpPhase, WorldEvent } from './simulation';
 
 type PlayerPatch = {
   name?: string;
@@ -10,6 +10,7 @@ type PlayerPatch = {
   yaw?: number;
   pitch?: number;
   hp?: number;
+  shield?: number;
   warpPhase?: WarpPhase;
   updatedAt?: number;
 };
@@ -35,6 +36,8 @@ type PeerMessage = {
   targetId?: string;
   name: string;
   color: number;
+  hp?: number;
+  shield?: number;
   x?: number;
   y?: number;
   z?: number;
@@ -164,6 +167,7 @@ export class MultiplayerClient {
         yaw,
         pitch,
         hp: this.state.combat.hp,
+        shield: this.state.combat.shield,
         warpPhase: this.state.warp.active ? this.state.warp.phase : 'idle'
       });
     } catch {
@@ -197,7 +201,9 @@ export class MultiplayerClient {
         y: position.y,
         z: position.z,
         yaw,
-        pitch
+        pitch,
+        hp: this.state.combat.hp,
+        shield: this.state.combat.shield
       });
 
       this.state.multiplayer.connected = true;
@@ -285,11 +291,10 @@ export class MultiplayerClient {
       const name = cleanName(player.name || 'Friend');
       const existing = this.state.remotePlayers.get(id);
       const serverHp = clampNumber(player.hp, 0, COMBAT_MAX_HP, COMBAT_MAX_HP);
-      const preserveLocalDamageEstimate =
-        !!existing &&
-        existing.hp < serverHp &&
-        this.state.combat.lastDamage?.name === name &&
-        this.state.combat.lastDamage.timer > 0.35;
+      const serverShield = clampNumber(player.shield, 0, COMBAT_MAX_SHIELD, COMBAT_MAX_SHIELD);
+      const lockActive = !!existing && existing.damageLockUntil > Date.now();
+      const preserveHull = lockActive && existing.hp < serverHp;
+      const preserveShield = lockActive && existing.shield < serverShield;
       this.state.remotePlayers.set(id, {
         id,
         name,
@@ -301,7 +306,9 @@ export class MultiplayerClient {
         },
         yaw: finiteNumber(player.yaw, existing?.yaw ?? 0),
         pitch: finiteNumber(player.pitch, existing?.pitch ?? 0),
-        hp: preserveLocalDamageEstimate ? existing.hp : serverHp,
+        hp: preserveHull ? existing.hp : serverHp,
+        shield: preserveShield ? existing.shield : serverShield,
+        damageLockUntil: existing?.damageLockUntil ?? 0,
         warpPhase: player.warpPhase || 'idle',
         updatedAt: finiteNumber(player.updatedAt, Date.now())
       });
@@ -345,6 +352,7 @@ export class MultiplayerClient {
       y: position.y,
       z: position.z,
       hp: this.state.combat.hp,
+      shield: this.state.combat.shield,
       warpPhase: this.state.warp.active ? this.state.warp.phase : 'idle'
     };
   }

@@ -210,6 +210,11 @@ body {
   box-shadow: 0 0 14px rgba(80, 255, 255, 0.38);
 }
 
+.combat-bar.shield i {
+  background: linear-gradient(90deg, #4691ff, #50ffff);
+  box-shadow: 0 0 15px rgba(80, 255, 255, 0.42);
+}
+
 .combat-bar.heat i {
   background: linear-gradient(90deg, #ffcd5a, #ff4646);
   box-shadow: 0 0 16px rgba(255, 70, 70, 0.46);
@@ -232,6 +237,10 @@ body {
 
 .combat-target .combat-bar {
   grid-column: 1 / -1;
+}
+
+.combat-target .target-shield {
+  margin-top: 7px;
 }
 
 .combat-callout,

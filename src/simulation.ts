@@ -13,8 +13,11 @@ export const WARP_EXIT_DURATION = 1.15;
 export const SPECIAL_PLANET_DURATION = 12;
 export const GROUP_WARP_PROXIMITY = 10000;
 export const COMBAT_MAX_HP = 100;
+export const COMBAT_MAX_SHIELD = 50;
 export const COMBAT_REGEN_INTERVAL = 8;
 export const COMBAT_REGEN_AMOUNT = 2;
+export const COMBAT_SHIELD_REGEN_INTERVAL = 3;
+export const COMBAT_SHIELD_REGEN_AMOUNT = 5;
 export const COMBAT_DAMAGE = 5;
 export const COMBAT_FIRE_INTERVAL = 0.18;
 export const COMBAT_OVERHEAT_COOLDOWN = 4;
@@ -132,6 +135,8 @@ export interface RemotePlayerState {
   yaw: number;
   pitch: number;
   hp: number;
+  shield: number;
+  damageLockUntil: number;
   warpPhase: WarpPhase;
   updatedAt: number;
 }
@@ -170,6 +175,8 @@ export interface CombatShotPayload {
   hit: boolean;
   damage: number;
   targetHp?: number;
+  targetShield?: number;
+  targetHull?: number;
 }
 
 export interface MultiplayerHooks {
@@ -239,7 +246,9 @@ export interface DamageNumber {
 export interface CombatState {
   enabled: boolean;
   hp: number;
+  shield: number;
   regenTimer: number;
+  shieldRegenTimer: number;
   heat: number;
   firing: boolean;
   fireTimer: number;
@@ -252,8 +261,8 @@ export interface CombatState {
   lockBreakTimer: number;
   disabledTimer: number;
   engagedTimer: number;
-  lastDamage: { name: string; damage: number; remainingHp: number; timer: number } | null;
-  lastIncoming: { name: string; damage: number; hp: number; timer: number } | null;
+  lastDamage: { name: string; damage: number; remainingHp: number; remainingShield: number; timer: number } | null;
+  lastIncoming: { name: string; damage: number; hp: number; shield: number; timer: number } | null;
   trails: CombatTrail[];
   damageNumbers: DamageNumber[];
   shotSequence: number;
@@ -609,7 +618,9 @@ export class GameState {
   combat: CombatState = {
     enabled: false,
     hp: COMBAT_MAX_HP,
+    shield: COMBAT_MAX_SHIELD,
     regenTimer: 0,
+    shieldRegenTimer: 0,
     heat: 0,
     firing: false,
     fireTimer: 0,
@@ -753,7 +764,7 @@ export class GameState {
         age: 0,
         ttl: 1.1
       });
-      if (isLocalTarget) this.applyCombatDamage(payload.damage, pilot);
+      if (isLocalTarget) this.applyCombatDamage(payload.damage, pilot, payload);
     }
   }
 
@@ -1310,6 +1321,15 @@ export class GameState {
     return Math.acos(clamp(na.x * nb.x + na.y * nb.y + na.z * nb.z, -1, 1));
   }
 
+  private absorbCombatDamage(shield: number, hull: number, damage: number) {
+    const shieldDamage = Math.min(Math.max(0, shield), Math.max(0, damage));
+    const hullDamage = Math.max(0, damage - shieldDamage);
+    return {
+      shield: Math.max(0, shield - shieldDamage),
+      hull: Math.max(0, hull - hullDamage)
+    };
+  }
+
   private bestAimTarget(maxAngle: number) {
     const aim = this.aimVector();
     let best: RemotePlayerState | null = null;
@@ -1395,6 +1415,7 @@ export class GameState {
     let hit = false;
     let damage = 0;
     let targetHp: number | undefined;
+    let targetShield: number | undefined;
     let end = addVec(origin, scaleVec(direction, maxRange));
 
     if (target) {
@@ -1405,10 +1426,14 @@ export class GameState {
       if (angle <= cone && d <= maxRange) {
         hit = true;
         damage = COMBAT_DAMAGE;
-        target.hp = Math.max(0, (target.hp ?? COMBAT_MAX_HP) - damage);
+        const vitals = this.absorbCombatDamage(target.shield ?? COMBAT_MAX_SHIELD, target.hp ?? COMBAT_MAX_HP, damage);
+        target.shield = vitals.shield;
+        target.hp = vitals.hull;
+        target.damageLockUntil = Date.now() + (target.hp <= 0 ? 12000 : 3500);
         targetHp = target.hp;
+        targetShield = target.shield;
         end = copyVec(target.position);
-        this.combat.lastDamage = { name: target.name, damage, remainingHp: target.hp, timer: 4.5 };
+        this.combat.lastDamage = { name: target.name, damage, remainingHp: target.hp, remainingShield: target.shield, timer: 4.5 };
         this.combat.damageNumbers.push({
           id: `damage-${this.combat.shotSequence}`,
           position: copyVec(target.position),
@@ -1449,16 +1474,29 @@ export class GameState {
       targetId: target?.id,
       hit,
       damage,
-      targetHp
+      targetHp,
+      targetShield,
+      targetHull: targetHp
     });
   }
 
-  private applyCombatDamage(damage: number, pilot: RemotePlayerState) {
+  private applyCombatDamage(damage: number, pilot: RemotePlayerState, authoritative?: CombatShotPayload) {
     if (!this.combat.enabled || damage <= 0) return;
-    this.combat.hp = Math.max(0, this.combat.hp - damage);
+    const authoritativeShield = Number.isFinite(authoritative?.targetShield);
+    const authoritativeHull = Number.isFinite(authoritative?.targetHull ?? authoritative?.targetHp);
+    const vitals =
+      authoritativeShield && authoritativeHull
+        ? {
+            shield: clamp(authoritative!.targetShield!, 0, COMBAT_MAX_SHIELD),
+            hull: clamp(authoritative!.targetHull ?? authoritative!.targetHp!, 0, COMBAT_MAX_HP)
+          }
+        : this.absorbCombatDamage(this.combat.shield, this.combat.hp, damage);
+    this.combat.shield = vitals.shield;
+    this.combat.hp = vitals.hull;
     this.combat.regenTimer = 0;
+    this.combat.shieldRegenTimer = 0;
     this.combat.engagedTimer = Math.max(this.combat.engagedTimer, 10);
-    this.combat.lastIncoming = { name: pilot.name, damage, hp: this.combat.hp, timer: 4.5 };
+    this.combat.lastIncoming = { name: pilot.name, damage, hp: this.combat.hp, shield: this.combat.shield, timer: 4.5 };
     if (this.combat.hp <= 0) {
       this.combat.disabledTimer = COMBAT_RESPAWN_DELAY;
       this.combat.firing = false;
@@ -1476,7 +1514,9 @@ export class GameState {
       this.combat.targetLockAge = 0;
       this.combat.engagedTimer = 0;
       this.combat.hp = COMBAT_MAX_HP;
+      this.combat.shield = COMBAT_MAX_SHIELD;
       this.combat.disabledTimer = 0;
+      this.combat.shieldRegenTimer = 0;
     }
 
     this.combat.engagedTimer = Math.max(0, this.combat.engagedTimer - dt);
@@ -1501,6 +1541,16 @@ export class GameState {
         this.combat.regenTimer = 0;
         this.combat.hp = Math.min(COMBAT_MAX_HP, this.combat.hp + COMBAT_REGEN_AMOUNT);
       }
+    }
+
+    if (enabled && !this.inCombat() && this.combat.hp > 0 && this.combat.shield < COMBAT_MAX_SHIELD && this.combat.disabledTimer <= 0) {
+      this.combat.shieldRegenTimer += dt;
+      if (this.combat.shieldRegenTimer >= COMBAT_SHIELD_REGEN_INTERVAL) {
+        this.combat.shieldRegenTimer = 0;
+        this.combat.shield = Math.min(COMBAT_MAX_SHIELD, this.combat.shield + COMBAT_SHIELD_REGEN_AMOUNT);
+      }
+    } else if (this.inCombat()) {
+      this.combat.shieldRegenTimer = 0;
     }
 
     if (this.combat.overheated) {

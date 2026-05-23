@@ -1312,17 +1312,15 @@ export class UniverseRenderer {
     const alignSpin = phase === 'align' ? (1 - align) * Math.PI * 4.4 : 0;
     const alignBank = phase === 'align' ? Math.sin(align * Math.PI) * 0.76 : 0;
     const topView = 1.08;
-
     this.localShip.position.set(
       Math.sin(elapsed * 1.35) * (floating ? 0.028 : 0.01),
       -1.02 - topView * 0.2 + Math.sin(elapsed * 1.9) * (floating ? 0.026 : 0.01) + exit * 0.18,
       -5.9 - topView * 0.38 - charge * 0.46 - jump * 1.12 + exit * 0.94
     );
-    this.localShip.rotation.set(
-      0.58 - charge * 0.08 + exit * 0.06 + alignBank * 0.08,
-      Math.sin(elapsed * 1.2) * 0.018 * (floating ? 1 : 0.25) + alignBank * 0.26,
-      Math.sin(elapsed * 2.1) * 0.035 * (floating ? 1 : 0.18) + alignSpin
-    );
+    const basePitch = 0.58 - charge * 0.08 + exit * 0.06 + alignBank * 0.08;
+    const baseYaw = Math.sin(elapsed * 1.2) * 0.018 * (floating ? 1 : 0.25) + alignBank * 0.26;
+    const baseRoll = Math.sin(elapsed * 2.1) * 0.035 * (floating ? 1 : 0.18) + alignSpin;
+    this.localShip.rotation.set(basePitch, baseYaw, baseRoll);
 
     const engine = this.localShip.userData.engine as THREE.Sprite | undefined;
     if (engine) {
